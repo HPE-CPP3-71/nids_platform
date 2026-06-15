@@ -1,0 +1,3 @@
+"""
+Core platform components.
+"""

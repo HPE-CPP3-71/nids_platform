@@ -1,0 +1,3 @@
+"""
+STP plugin package.
+"""
