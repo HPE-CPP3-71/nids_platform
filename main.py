@@ -1,15 +1,21 @@
 """
 Phase 2 startup entry point.
 
-Registers all available protocol plugins,
-runs validation, and prints a registry summary.
+Capture -> Normalize -> Classify -> Route
+
+No anomaly detection.
+No feature extraction.
+No windowing.
 """
 
 from __future__ import annotations
 
 import logging
+import time
 
-from nids_platform.core.enums import Protocol
+from nids_platform.capture.scapy_capture import ScapyCapture
+
+from nids_platform.core.packet import PacketRecord
 from nids_platform.core.registry import ProtocolRegistry
 
 from nids_platform.plugins.stp.plugin import STPPlugin
@@ -17,12 +23,10 @@ from nids_platform.plugins.bgp.plugin import BGPPlugin
 from nids_platform.plugins.lldp.plugin import LLDPPlugin
 from nids_platform.plugins.arp.plugin import ARPPlugin
 
+from nids_platform.routing.router import ProtocolRouter
+
 
 def configure_logging() -> None:
-    """
-    Configure platform logging.
-    """
-
     logging.basicConfig(
         level=logging.INFO,
         format=(
@@ -34,29 +38,7 @@ def configure_logging() -> None:
     )
 
 
-def print_protocols(
-    title: str,
-    protocols: list[Protocol],
-) -> None:
-    """
-    Pretty-print protocol lists.
-    """
-
-    print(f"\n{title}")
-
-    if not protocols:
-        print("- None")
-        return
-
-    for protocol in protocols:
-        print(f"- {protocol.name}")
-
-
 def build_registry() -> ProtocolRegistry:
-    """
-    Create and populate registry.
-    """
-
     registry = ProtocolRegistry()
 
     registry.register(STPPlugin)
@@ -64,34 +46,74 @@ def build_registry() -> ProtocolRegistry:
     registry.register(LLDPPlugin)
     registry.register(ARPPlugin)
 
+    registry.validate_all()
+
     return registry
 
 
 def main() -> None:
-    """
-    Platform startup.
-    """
 
     configure_logging()
 
+    logger = logging.getLogger(__name__)
+
     registry = build_registry()
 
-    registry.validate_all()
+    router = ProtocolRouter(registry)
 
-    print_protocols(
-        "Registered protocols:",
-        registry.all_protocols(),
+    capture = ScapyCapture()
+
+    def on_packet(
+        record: PacketRecord,
+    ) -> None:
+
+        decision = router.route(record)
+
+        if decision is None:
+            return
+
+        logger.debug(
+            (
+                "Routing decision: "
+                "protocol=%s "
+                "engine=%s "
+                "plugin=%s"
+            ),
+            decision.protocol.name,
+            decision.engine_type.name,
+            decision.plugin_class.__name__,
+        )
+
+    capture.start(on_packet)
+
+    logger.info(
+        "Phase 2 routing pipeline started."
     )
 
-    print_protocols(
-        "Window protocols:",
-        registry.window_protocols(),
-    )
+    try:
 
-    print_protocols(
-        "Flow protocols:",
-        registry.flow_protocols(),
-    )
+        while True:
+            time.sleep(1)
+
+    except KeyboardInterrupt:
+
+        logger.info(
+            "Stopping capture."
+        )
+
+        capture.stop()
+
+        logger.info(
+            (
+                "Router statistics | "
+                "routed=%d "
+                "dropped=%d "
+                "unknown=%d"
+            ),
+            router.stats.routed,
+            router.stats.dropped,
+            router.stats.unknown,
+        )
 
 
 if __name__ == "__main__":

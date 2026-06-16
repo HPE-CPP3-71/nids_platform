@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from core.enums import EngineType, PacketSource, Protocol
+from nids_platform.core.enums import EngineType, PacketSource, Protocol
 
 
 @dataclass(slots=True)
