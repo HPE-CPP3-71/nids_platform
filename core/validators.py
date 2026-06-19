@@ -10,9 +10,11 @@ from typing import TypeGuard
 from .enums import EngineType
 from .enums import ModelType
 from .enums import Protocol
+
 from .interfaces import BasePlugin
 from .interfaces import FlowPlugin
 from .interfaces import WindowPlugin
+
 from .exceptions import ConfigurationError
 from .exceptions import PluginValidationError
 
@@ -46,6 +48,12 @@ def is_flow_plugin(
 class PluginValidator:
     """
     Centralized plugin validation.
+
+    Supports:
+
+    - Phase 1 / 2 / 3 plugins
+    - Phase 4 plugins
+    - Mixed migration state
     """
 
     @staticmethod
@@ -94,6 +102,59 @@ class PluginValidator:
                 f"invalid model_type."
             )
 
+        PluginValidator._validate_phase3(
+            plugin_class,
+            protocol,
+        )
+
+        PluginValidator._validate_phase4(
+            plugin_class,
+            protocol,
+        )
+
+        if is_window_plugin(
+            plugin_class,
+        ):
+            PluginValidator.validate_window_config(
+                plugin_class.window_config,
+            )
+
+        if is_flow_plugin(
+            plugin_class,
+        ):
+            PluginValidator.validate_flow_config(
+                plugin_class.flow_config,
+            )
+
+    @staticmethod
+    def _validate_phase3(
+        plugin_class: Type[BasePlugin],
+        protocol: Protocol,
+    ) -> None:
+        """
+        Validate legacy architecture.
+
+        Only enforced when legacy
+        components are configured.
+        """
+
+        legacy_enabled = any(
+            getattr(
+                plugin_class,
+                attr,
+                None,
+            )
+            is not None
+            for attr in (
+                "feature_extractor",
+                "model_loader",
+                "inference_handler",
+            )
+        )
+
+        if not legacy_enabled:
+            return
+
         if getattr(
             plugin_class,
             "feature_extractor",
@@ -124,18 +185,63 @@ class PluginValidator:
                 f"missing inference_handler."
             )
 
-        if is_window_plugin(
+    @staticmethod
+    def _validate_phase4(
+        plugin_class: Type[BasePlugin],
+        protocol: Protocol,
+    ) -> None:
+        """
+        Validate Phase 4 architecture.
+
+        Only enforced when Phase 4
+        fields are present.
+        """
+
+        phase4_enabled = any(
+            getattr(
+                plugin_class,
+                attr,
+                None,
+            )
+            is not None
+            for attr in (
+                "feature_extractor_class",
+                "detector_class",
+                "model_loader_class",
+            )
+        )
+
+        if not phase4_enabled:
+            return
+
+        if getattr(
             plugin_class,
-        ):
-            PluginValidator.validate_window_config(
-                plugin_class.window_config,
+            "feature_extractor_class",
+            None,
+        ) is None:
+            raise PluginValidationError(
+                f"{protocol.name}: "
+                f"missing feature_extractor_class."
             )
 
-        if is_flow_plugin(
+        if getattr(
             plugin_class,
-        ):
-            PluginValidator.validate_flow_config(
-                plugin_class.flow_config,
+            "detector_class",
+            None,
+        ) is None:
+            raise PluginValidationError(
+                f"{protocol.name}: "
+                f"missing detector_class."
+            )
+
+        if getattr(
+            plugin_class,
+            "model_loader_class",
+            None,
+        ) is None:
+            raise PluginValidationError(
+                f"{protocol.name}: "
+                f"missing model_loader_class."
             )
 
     @staticmethod

@@ -7,6 +7,7 @@ from __future__ import annotations
 from abc import ABC
 from abc import abstractmethod
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from .enums import EngineType
@@ -37,13 +38,13 @@ class FlowConfig:
     aggregation_strategy: str
 
 
+# ==========================================================
+# Legacy Phase 1 Interfaces
+# ==========================================================
+
 class FeatureExtractor(ABC):
     """
-    Feature extraction contract.
-
-    Implementations transform raw protocol
-    records into feature vectors usable by
-    downstream models.
+    Legacy feature extraction contract.
     """
 
     @abstractmethod
@@ -51,23 +52,19 @@ class FeatureExtractor(ABC):
         self,
         data: Any,
     ) -> None:
-        """
-        Validate incoming protocol data.
-        """
+        pass
 
     @abstractmethod
     def extract(
         self,
         data: Any,
     ) -> list[float]:
-        """
-        Extract feature vector.
-        """
+        pass
 
 
 class ModelLoader(ABC):
     """
-    Model loading contract.
+    Legacy model loading contract.
     """
 
     @abstractmethod
@@ -75,23 +72,19 @@ class ModelLoader(ABC):
         self,
         path: str,
     ) -> None:
-        """
-        Validate model path.
-        """
+        pass
 
     @abstractmethod
     def load(
         self,
         path: str,
     ) -> Any:
-        """
-        Load model object.
-        """
+        pass
 
 
 class InferenceHandler(ABC):
     """
-    Inference execution contract.
+    Legacy inference contract.
     """
 
     @abstractmethod
@@ -99,9 +92,7 @@ class InferenceHandler(ABC):
         self,
         features: list[float],
     ) -> None:
-        """
-        Validate model features.
-        """
+        pass
 
     @abstractmethod
     def predict(
@@ -109,15 +100,29 @@ class InferenceHandler(ABC):
         model: Any,
         features: list[float],
     ) -> float:
-        """
-        Return anomaly score.
-        """
+        pass
 
+
+# ==========================================================
+# Plugin Contracts
+# ==========================================================
 
 class BasePlugin(ABC):
     """
     Base protocol plugin.
+
+    Supports both:
+
+    - Legacy Phase 1–3 plugins
+    - Phase 4 detector architecture
+
+    This allows incremental migration
+    protocol-by-protocol.
     """
+
+    #
+    # Required
+    #
 
     protocol: Protocol
 
@@ -125,18 +130,51 @@ class BasePlugin(ABC):
 
     model_type: ModelType
 
-    feature_extractor: FeatureExtractor
+    #
+    # Legacy Phase 1–3
+    #
 
-    model_loader: ModelLoader
+    feature_extractor: (
+        FeatureExtractor | None
+    ) = None
 
-    inference_handler: InferenceHandler
+    model_loader: (
+        ModelLoader | None
+    ) = None
+
+    inference_handler: (
+        InferenceHandler | None
+    ) = None
+
+    #
+    # Phase 4
+    #
+
+    feature_extractor_class: (
+        type | None
+    ) = None
+
+    detector_class: (
+        type | None
+    ) = None
+
+    model_loader_class: (
+        type | None
+    ) = None
+
+    model_path: (
+        str
+        | Path
+        | None
+    ) = None
 
     @abstractmethod
-    def validate(self) -> None:
+    def validate(
+        self,
+    ) -> None:
         """
         Validate plugin configuration.
         """
-
 
 class WindowPlugin(
     BasePlugin,

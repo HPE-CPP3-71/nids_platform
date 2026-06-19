@@ -47,6 +47,17 @@ class Severity(str, Enum):
     HIGH = "HIGH"
     CRITICAL = "CRITICAL"
 
+
+class DetectorStatus(str, Enum):
+    """
+    Detector execution status.
+    """
+
+    SUCCESS = "SUCCESS"
+    SKIPPED = "SKIPPED"
+    FAILED = "FAILED"
+
+
 class Protocol(Enum):
     UNKNOWN = "UNKNOWN"
     STP = "STP"
