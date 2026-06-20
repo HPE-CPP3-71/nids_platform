@@ -22,11 +22,15 @@ class PcapReplayCapture(PacketCapture):
     def __init__(
         self,
         pcap_path: str,
-        replay_delay: float = 0.0,
+        replay_speed: float = 1.0,
     ) -> None:
 
         self._pcap_path = pcap_path
-        self._replay_delay = replay_delay
+
+        self._replay_speed = max(
+            replay_speed,
+            0.01,
+        )
 
         self._callback: Callable[
             [PacketRecord],
@@ -34,13 +38,19 @@ class PcapReplayCapture(PacketCapture):
         ] | None = None
 
         self._running = False
+
         self._thread: threading.Thread | None = None
 
-        self._normalizer = PacketNormalizer()
+        self._normalizer = (
+            PacketNormalizer()
+        )
 
     def start(
         self,
-        callback: Callable[[PacketRecord], None],
+        callback: Callable[
+            [PacketRecord],
+            None,
+        ],
     ) -> None:
 
         if self._running:
@@ -49,6 +59,7 @@ class PcapReplayCapture(PacketCapture):
             )
 
         self._callback = callback
+
         self._running = True
 
         self._thread = threading.Thread(
@@ -59,11 +70,17 @@ class PcapReplayCapture(PacketCapture):
         self._thread.start()
 
         logger.info(
-            "Started PCAP replay: %s",
+            (
+                "Started PCAP replay: %s "
+                "(speed=%.2fx)"
+            ),
             self._pcap_path,
+            self._replay_speed,
         )
 
-    def stop(self) -> None:
+    def stop(
+        self,
+    ) -> None:
 
         self._running = False
 
@@ -71,13 +88,17 @@ class PcapReplayCapture(PacketCapture):
             self._thread is not None
             and self._thread.is_alive()
         ):
-            self._thread.join(timeout=5)
+            self._thread.join(
+                timeout=5,
+            )
 
         logger.info(
             "Stopped PCAP replay."
         )
 
-    def _replay_loop(self) -> None:
+    def _replay_loop(
+        self,
+    ) -> None:
 
         try:
 
@@ -85,17 +106,47 @@ class PcapReplayCapture(PacketCapture):
                 self._pcap_path
             )
 
+            previous_timestamp: (
+                float | None
+            ) = None
+
             for packet in packets:
 
                 if not self._running:
                     break
 
-                self._process_packet(packet)
-
-                if self._replay_delay > 0:
-                    time.sleep(
-                        self._replay_delay
+                current_timestamp = float(
+                    getattr(
+                        packet,
+                        "time",
+                        0.0,
                     )
+                )
+
+                if (
+                    previous_timestamp
+                    is not None
+                ):
+
+                    gap = (
+                        current_timestamp
+                        - previous_timestamp
+                    )
+
+                    if gap > 0:
+
+                        time.sleep(
+                            gap
+                            / self._replay_speed
+                        )
+
+                self._process_packet(
+                    packet
+                )
+
+                previous_timestamp = (
+                    current_timestamp
+                )
 
         except Exception:
 
@@ -116,11 +167,18 @@ class PcapReplayCapture(PacketCapture):
 
             record = (
                 self._normalizer
-                .normalize_pcap(packet)
+                .normalize_pcap(
+                    packet
+                )
             )
 
-            if self._callback is not None:
-                self._callback(record)
+            if (
+                self._callback
+                is not None
+            ):
+                self._callback(
+                    record
+                )
 
         except Exception:
 

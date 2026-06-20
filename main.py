@@ -73,6 +73,9 @@ from nids_platform.windowing.engine import (
     WindowEngine,
 )
 
+from nids_platform.capture.pcap_replay import (
+    PcapReplayCapture,
+)
 
 def configure_logging() -> None:
 
@@ -142,12 +145,38 @@ def main() -> None:
         batch: WindowBatch,
     ) -> None:
 
+        logger.info(
+            (
+                "Window emitted | "
+                "protocol=%s | "
+                "packets=%d | "
+                "start=%.2f | "
+                "end=%.2f"
+            ),
+            batch.protocol.name,
+            batch.packet_count,
+            batch.start_time,
+            batch.end_time,
+        )
+
         try:
 
             feature_vector = (
                 feature_engine.extract(
                     batch
                 )
+            )
+
+            logger.info(
+                (
+                    "Features extracted | "
+                    "protocol=%s | "
+                    "count=%d | "
+                    "valid=%s"
+                ),
+                feature_vector.protocol.name,
+                feature_vector.feature_count(),
+                feature_vector.valid,
             )
 
             result = (
@@ -175,7 +204,10 @@ def main() -> None:
         )
     )
 
-    capture = ScapyCapture()
+    capture = PcapReplayCapture(
+        pcap_path=r"D:\HPE\STP\Dataset\Attack\sw6_kali_benign_capture_session4.pcapng",
+        replay_speed=1.0,
+    )
 
     def on_packet(
         record: PacketRecord,
