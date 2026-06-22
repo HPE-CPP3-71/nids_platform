@@ -48,7 +48,7 @@ def test_bgp_plugin_configuration() -> None:
 
     assert (
         plugin.window_config.window_size_seconds
-        == 300
+        == 180
     )
 
 

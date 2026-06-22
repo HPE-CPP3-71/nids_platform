@@ -205,7 +205,7 @@ def main() -> None:
     )
 
     capture = PcapReplayCapture(
-        pcap_path=r"D:\HPE\STP\Dataset\Attack\sw6_kali_benign_capture_session4.pcapng",
+        pcap_path=r"D:\HPE\BGP\Project\data\pcap_replay\rrc04_slammer_normal.pcap",
         replay_speed=1.0,
     )
 

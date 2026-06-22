@@ -217,7 +217,7 @@ def test_uuid_serialization() -> None:
     batch = WindowBatch.create(
         protocol=Protocol.BGP,
         start_time=0.0,
-        end_time=300.0,
+        end_time=180.0,
         packets=(),
         source=PacketSource.LIVE,
     )

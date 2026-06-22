@@ -1,118 +1,114 @@
-"""
-BGP protocol plugin implementation.
-"""
-
 from __future__ import annotations
 
-import logging
 from pathlib import Path
-from typing import Any
 
-from nids_platform.core.enums import EngineType
-from nids_platform.core.enums import ModelType
-from nids_platform.core.enums import Protocol
-from nids_platform.core.enums import WindowType
-from nids_platform.core.interfaces import FeatureExtractor
-from nids_platform.core.interfaces import InferenceHandler
-from nids_platform.core.interfaces import ModelLoader
-from nids_platform.core.interfaces import WindowConfig
-from nids_platform.core.interfaces import WindowPlugin
-from nids_platform.core.exceptions import ConfigurationError
+from nids_platform.core.enums import (
+    EngineType,
+)
+from nids_platform.core.enums import (
+    ModelType,
+)
+from nids_platform.core.enums import (
+    Protocol,
+)
+from nids_platform.core.enums import (
+    WindowType,
+)
 
+from nids_platform.core.exceptions import (
+    ConfigurationError,
+)
 
-logger = logging.getLogger(__name__)
+from nids_platform.core.interfaces import (
+    WindowConfig,
+)
+from nids_platform.core.interfaces import (
+    WindowPlugin,
+)
 
-
-class BGPFeatureExtractor(FeatureExtractor):
-
-    def validate_input(self, data: Any) -> None:
-        if data is None:
-            raise ValueError(
-                "BGP input data cannot be None."
-            )
-
-    def extract(self, data: Any) -> list[float]:
-        self.validate_input(data)
-
-        if isinstance(data, dict):
-            return [float(len(data)), 2.0]
-
-        return [2.0]
-
-
-class BGPModelLoader(ModelLoader):
-
-    def validate_path(self, path: str) -> None:
-        if not path:
-            raise ValueError(
-                "Model path cannot be empty."
-            )
-
-    def load(self, path: str) -> dict[str, str]:
-        self.validate_path(path)
-
-        model_path = Path(path)
-
-        logger.info(
-            "Loading BGP model from %s",
-            model_path,
-        )
-
-        return {
-            "model_type": "pytorch",
-            "path": str(model_path),
-        }
+from .detector import (
+    BGPDetector,
+)
+from .extractor import (
+    BGPFeatureExtractor,
+)
+from .model_loader import (
+    BGPModelLoader,
+)
 
 
-class BGPInferenceHandler(InferenceHandler):
+class BGPPlugin(
+    WindowPlugin,
+):
+    """
+    Production BGP plugin.
 
-    def validate_features(
-        self,
-        features: list[float],
-    ) -> None:
-        if not features:
-            raise ValueError(
-                "Feature vector cannot be empty."
-            )
+    Phase 4 implementation.
 
-    def predict(
-        self,
-        model: Any,
-        features: list[float],
-    ) -> float:
-        self.validate_features(features)
+    Wires together:
 
-        return min(
-            (sum(features) / len(features)) / 10.0,
-            1.0,
-        )
-
-
-class BGPPlugin(WindowPlugin):
+    - WindowEngine
+    - BGPFeatureExtractor
+    - BGPModelLoader
+    - BGPDetector
+    """
 
     protocol = Protocol.BGP
 
-    engine_type = EngineType.WINDOW
-
-    model_type = ModelType.PYTORCH
-
-    feature_extractor = BGPFeatureExtractor()
-
-    model_loader = BGPModelLoader()
-
-    inference_handler = BGPInferenceHandler()
-
-    window_config = WindowConfig(
-        window_size_seconds=300,
-        window_stride_seconds=300,
-        window_type=WindowType.TUMBLING,
+    engine_type = (
+        EngineType.WINDOW
     )
 
-    def validate(self) -> None:
+    model_type = (
+        ModelType.SKLEARN
+    )
+
+    feature_extractor_class = (
+        BGPFeatureExtractor
+    )
+
+    detector_class = (
+        BGPDetector
+    )
+
+    model_loader_class = (
+        BGPModelLoader
+    )
+
+    model_path = (
+        Path(__file__).parent
+        / "artifacts"
+    )
+
+    window_config = WindowConfig(
+        window_size_seconds=180,
+        window_stride_seconds=180,
+        window_type=(
+            WindowType.TUMBLING
+        ),
+    )
+
+    def validate(
+        self,
+    ) -> None:
+        """
+        Plugin validation.
+        """
+
         if (
             self.window_config.window_size_seconds
-            != 300
+            != 180
         ):
             raise ConfigurationError(
-                "BGP requires a 300-second window."
+                "BGP requires a "
+                "180-second window."
+            )
+
+        if not (
+            self.model_path.exists()
+        ):
+            raise ConfigurationError(
+                "BGP model directory "
+                f"not found: "
+                f"{self.model_path}"
             )
