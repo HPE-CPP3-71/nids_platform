@@ -166,7 +166,12 @@ def main() -> None:
                     batch
                 )
             )
-
+            logger.info(
+                "%s FEATURES: %s",
+                feature_vector.protocol.name,
+                feature_vector.features,
+            )
+            
             logger.info(
                 (
                     "Features extracted | "
@@ -205,7 +210,7 @@ def main() -> None:
     )
 
     capture = PcapReplayCapture(
-        pcap_path=r"D:\HPE\BGP\Project\data\pcap_replay\rrc04_slammer_normal.pcap",
+        pcap_path=r"D:\HPE\BGP\Project\data\pcap_replay\rrc04_moscow_blackout_normal.pcap",
         replay_speed=1.0,
     )
 

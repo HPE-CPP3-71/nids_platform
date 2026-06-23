@@ -26,19 +26,12 @@ class FeatureExtractionEngine:
     """
     Phase 4 feature extraction engine.
 
-    Responsibilities
-    ----------------
+    One extractor instance is kept
+    per protocol.
 
-    - Receive WindowBatch
-    - Locate protocol plugin
-    - Instantiate extractor
-    - Produce FeatureVector
-
-    Does NOT:
-
-    - Execute models
-    - Generate alerts
-    - Store results
+    This allows protocol extractors
+    to maintain rolling state across
+    multiple windows.
     """
 
     def __init__(
@@ -48,30 +41,42 @@ class FeatureExtractionEngine:
 
         self._registry = registry
 
-    def extract(
+        #
+        # protocol -> extractor instance
+        #
+        self._extractors: dict = {}
+
+    def _get_extractor(
         self,
-        batch: WindowBatch,
-    ) -> FeatureVector:
-        """
-        Extract protocol-specific features.
-        """
+        protocol,
+    ) -> BaseFeatureExtractor | None:
+
+        if protocol in self._extractors:
+
+            logger.info(
+                "Reusing extractor "
+                "id=%s "
+                "protocol=%s",
+                id(
+                    self._extractors[
+                        protocol
+                    ]
+                ),
+                protocol.name,
+            )
+
+            return self._extractors[
+                protocol
+            ]
 
         plugin_class = (
             self._registry.get(
-                batch.protocol
+                protocol
             )
         )
 
         if plugin_class is None:
-
-            return FeatureVector.invalid(
-                protocol=batch.protocol,
-                batch_id=batch.batch_id,
-                reason=(
-                    "No plugin registered "
-                    "for protocol"
-                ),
-            )
+            return None
 
         extractor_class = getattr(
             plugin_class,
@@ -80,27 +85,53 @@ class FeatureExtractionEngine:
         )
 
         if extractor_class is None:
+            return None
 
-            return FeatureVector.invalid(
-                protocol=batch.protocol,
-                batch_id=batch.batch_id,
-                reason=(
-                    "Plugin missing "
-                    "feature_extractor_class"
-                ),
-            )
-
-        extractor = extractor_class()
+        extractor = (
+            extractor_class()
+        )
 
         if not isinstance(
             extractor,
             BaseFeatureExtractor,
         ):
+            return None
+
+        self._extractors[
+            protocol
+        ] = extractor
+
+        logger.info(
+            "Created feature extractor "
+            "id=%s "
+            "protocol=%s",
+            id(
+                extractor
+            ),
+            protocol.name,
+        )
+
+        return extractor
+
+    def extract(
+        self,
+        batch: WindowBatch,
+    ) -> FeatureVector:
+
+        extractor = (
+            self._get_extractor(
+                batch.protocol
+            )
+        )
+
+        if extractor is None:
+
             return FeatureVector.invalid(
                 protocol=batch.protocol,
                 batch_id=batch.batch_id,
                 reason=(
-                    "Invalid extractor type"
+                    "No feature extractor "
+                    "available"
                 ),
             )
 
