@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 import math
 import statistics
+from venv import logger
 
 from scapy.layers.l2 import STP
 
@@ -223,6 +224,12 @@ class STPFeatureExtractor(
             # rootid:
             # upper 16 bits contain priority
             #
+            # logger.info(
+            #     "rootid=%s pathcost=%s src_mac=%s",
+            #      getattr(stp, "rootid", None),
+            #      getattr(stp, "pathcost", None),
+            #      record.metadata.src_mac,
+            # )
             try:
 
                 root_id = int(
@@ -233,9 +240,7 @@ class STPFeatureExtractor(
                     )
                 )
 
-                root_priority = (
-                    root_id >> 48
-                )
+                root_priority = root_id
 
                 root_priorities.append(
                     float(

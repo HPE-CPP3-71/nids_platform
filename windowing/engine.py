@@ -221,6 +221,10 @@ class WindowEngine:
                 protocol.name,
             )
             return
+        
+        record.ingest_time = (
+            time.monotonic()
+        )
 
         accepted = (
             self._buffers[
@@ -283,12 +287,15 @@ class WindowEngine:
             )
 
             if (
-                config.window_type
-                is not WindowType.TUMBLING
+                config.window_type not in (
+                    WindowType.TUMBLING,
+                    WindowType.SLIDING,
+                )
+                
             ):
                 raise ValueError(
-                    "Phase 3 only supports "
-                    "tumbling windows"
+                    f"Unsupported window type: "
+                    f"{config.window_type}"
                 )
 
             self._buffers[
@@ -384,6 +391,18 @@ class WindowEngine:
             )
 
             state.advance()
+            
+            if(
+                state.window_type
+                is WindowType.SLIDING
+            ):
+                self._buffers[
+                    protocol
+                    ].evict_before(
+                        state.window_start
+                    )
+                    
+            
 
     def _emit_batch(
         self,
@@ -403,7 +422,27 @@ class WindowEngine:
             protocol
         ]
 
-        packets = buffer.flush()
+        if (
+            state.window_type is WindowType.TUMBLING
+        ):
+            packets = buffer.flush()
+        
+        else:
+              
+              logger.info(
+                  "WINDOW RANGE protocol=%s start=%f end=%f",
+                    protocol.name,
+                    state.window_start,
+                    state.window_end,
+              )
+            
+              packets = (
+                  buffer.get_window_packets(
+                      state.window_start,
+                      state.window_end,
+                  )
+              )
+              
 
         source = (
             packets[0].source

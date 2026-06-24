@@ -101,7 +101,7 @@ class ProtocolRouter:
 
         self._stats.routed += 1
 
-        logger.info(
+        logger.debug(
             "Protocol identified: %s",
             protocol.name,
         )

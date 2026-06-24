@@ -84,9 +84,9 @@ class STPPlugin(
 
     window_config = WindowConfig(
         window_size_seconds=10,
-        window_stride_seconds=10,
+        window_stride_seconds=5,
         window_type=(
-            WindowType.TUMBLING
+            WindowType.SLIDING
         ),
     )
 

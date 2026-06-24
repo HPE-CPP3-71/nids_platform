@@ -100,12 +100,14 @@ class WindowState:
             )
 
         if (
-            self.window_type
-            is not WindowType.TUMBLING
+            self.window_type not in (
+                WindowType.TUMBLING,
+                WindowType.SLIDING,
+            )
+            
         ):
             raise ValueError(
-                "Phase 3 supports only "
-                "tumbling windows"
+                "Unsupported window type"
             )
 
     @property

@@ -53,17 +53,17 @@ class FeatureExtractionEngine:
 
         if protocol in self._extractors:
 
-            logger.info(
-                "Reusing extractor "
-                "id=%s "
-                "protocol=%s",
-                id(
-                    self._extractors[
-                        protocol
-                    ]
-                ),
-                protocol.name,
-            )
+            # logger.info(
+            #     "Reusing extractor "
+            #     "id=%s "
+            #     "protocol=%s",
+            #     id(
+            #         self._extractors[
+            #             protocol
+            #         ]
+            #     ),
+            #     protocol.name,
+            # )
 
             return self._extractors[
                 protocol
@@ -101,15 +101,15 @@ class FeatureExtractionEngine:
             protocol
         ] = extractor
 
-        logger.info(
-            "Created feature extractor "
-            "id=%s "
-            "protocol=%s",
-            id(
-                extractor
-            ),
-            protocol.name,
-        )
+        # logger.info(
+        #     "Created feature extractor "
+        #     "id=%s "
+        #     "protocol=%s",
+        #     id(
+        #         extractor
+        #     ),
+        #     protocol.name,
+        # )
 
         return extractor
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from scapy.layers.l2 import Ether
+from scapy.layers.l2 import Dot3
 from scapy.packet import Packet
 
 from nids_platform.core.enums import PacketSource
@@ -63,6 +64,13 @@ class PacketNormalizer:
         dst_mac: str | None = None
         ethertype: str | None = None
 
+        # print(
+        #     "LAYERS:",
+        #     packet.summary(),
+        #     "HAS_ETHER=",
+        #     packet.haslayer(Ether),
+        # )
+
         if packet.haslayer(Ether):
 
             ether = packet[Ether]
@@ -90,6 +98,24 @@ class PacketNormalizer:
                     int(ether_type)
                 )
 
+        elif packet.haslayer(Dot3):
+            dot3 = packet[Dot3]
+            src_mac = getattr(
+                dot3,
+                "src",
+                None,
+            )
+            dst_mac = getattr(
+                dot3,
+                "dst",
+                None,
+            )
+
+        # print(
+        #     "NORMALIZER",
+        #     src_mac,
+        #     dst_mac,
+        # )
         return PacketMetadata(
             src_mac=src_mac,
             dst_mac=dst_mac,

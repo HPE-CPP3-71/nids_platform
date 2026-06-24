@@ -98,17 +98,17 @@ def build_registry() -> ProtocolRegistry:
         STPPlugin
     )
 
-    registry.register(
-        BGPPlugin
-    )
+    # registry.register(
+    #     BGPPlugin
+    # )
 
-    registry.register(
-        LLDPPlugin
-    )
+    # registry.register(
+    #     LLDPPlugin
+    # )
 
-    registry.register(
-        ARPPlugin
-    )
+    # registry.register(
+    #     ARPPlugin
+    # )
 
     registry.validate_all()
 
@@ -210,7 +210,7 @@ def main() -> None:
     )
 
     capture = PcapReplayCapture(
-        pcap_path=r"D:\HPE\BGP\Project\data\pcap_replay\rrc04_moscow_blackout_normal.pcap",
+        pcap_path=r"D:\HPE\STP\Dataset\5 sec windows\benign\sw1_sw2_benign_capture_3h.pcapng",
         replay_speed=1.0,
     )
 

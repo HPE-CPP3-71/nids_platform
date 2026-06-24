@@ -30,6 +30,7 @@ class PacketRecord:
     raw_packet: bytes
     metadata: PacketMetadata
     packet_obj: Any | None = None
+    ingest_time: float = 0.0
 
 
 @dataclass(slots=True)

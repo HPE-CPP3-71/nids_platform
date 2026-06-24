@@ -199,6 +199,12 @@ class WindowBuffer:
 
                 return False
 
+            # logger.info(
+            #     "BUFFER ADD protocol=%s timestamp=%f",
+            #     self.protocol.name,
+            #     record.timestamp,
+            # )
+
             self._packets.append(
                 record
             )
@@ -353,3 +359,35 @@ class WindowBuffer:
             f"dropped={self._dropped_packets}"
             ")"
         )
+    
+    def get_window_packets(
+        self,
+        start_time: float,
+        end_time: float,
+    ) -> tuple[PacketRecord, ...]:
+
+        with self._lock:
+
+            return tuple(
+                packet
+                for packet in self._packets
+                if (
+                    start_time
+                    <= packet.ingest_time
+                    < end_time
+                )
+            )
+        
+    def evict_before(
+        self,
+        timestamp: float,
+    ) -> None:
+
+        with self._lock:
+
+            while (
+                self._packets
+                and self._packets[0].ingest_time
+                < timestamp
+            ):
+                self._packets.popleft()
