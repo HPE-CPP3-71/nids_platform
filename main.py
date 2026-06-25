@@ -94,9 +94,9 @@ def build_registry() -> ProtocolRegistry:
 
     registry = ProtocolRegistry()
 
-    registry.register(
-        STPPlugin
-    )
+    # registry.register(
+    #     STPPlugin
+    # )
 
     # registry.register(
     #     BGPPlugin
@@ -106,9 +106,9 @@ def build_registry() -> ProtocolRegistry:
     #     LLDPPlugin
     # )
 
-    # registry.register(
-    #     ARPPlugin
-    # )
+    registry.register(
+        ARPPlugin
+    )
 
     registry.validate_all()
 
@@ -209,9 +209,14 @@ def main() -> None:
         )
     )
 
-    capture = PcapReplayCapture(
-        pcap_path=r"D:\HPE\STP\Dataset\5 sec windows\benign\sw1_sw2_benign_capture_3h.pcapng",
-        replay_speed=1.0,
+    # capture = PcapReplayCapture(
+    #     pcap_path=r"D:\HPE\STP\Dataset\5 sec windows\attack\sw1_sw2_benign_capture_attack_123_session4.pcap",
+    #     replay_speed=1.0,
+    # )
+    
+    capture = ScapyCapture(
+    interface="Wi-Fi",
+    bpf_filter=None,
     )
 
     def on_packet(

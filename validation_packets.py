@@ -62,12 +62,12 @@ if __name__ == "__main__":
         send_arp()
         time.sleep(1)
 
-        send_bgp()
+        send_arp()
         time.sleep(1)
 
-        send_stp()
+        send_arp()
         time.sleep(1)
 
-        send_lldp()
+        send_arp()
         time.sleep(3)
 
