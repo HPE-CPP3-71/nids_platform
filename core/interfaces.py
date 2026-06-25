@@ -130,6 +130,18 @@ class BasePlugin(ABC):
 
     model_type: ModelType
 
+    @property
+    def protocol_name(
+        self,
+    ) -> str:
+        """
+        Convenience accessor mirroring the
+        ``protocol_name`` convention used by
+        extractors, detectors and loaders.
+        """
+
+        return self.protocol.value
+
     #
     # Legacy Phase 1–3
     #
