@@ -158,20 +158,6 @@ class BGPRule(ClassifierRule):
 
 
 class DHCPStarvationRule(ClassifierRule):
-    """
-    Matches ONLY DHCP Discover packets (message-type == 1).
-
-    Starvation attacks flood the network exclusively with
-    Discover packets using spoofed MACs to exhaust the pool.
-
-    We deliberately exclude Request packets here because:
-    - In a spoofing pcap, Requests are part of a legitimate
-      DORA exchange and must not be counted as starvation.
-    - The starvation model was trained on Discover-heavy windows;
-      routing stray Requests into it causes false positives.
-
-    Priority 50 - evaluated after BGP, before spoofing.
-    """
 
     priority = 50
 
@@ -215,15 +201,7 @@ class DHCPStarvationRule(ClassifierRule):
 
 
 class DHCPSpoofingRule(ClassifierRule):
-    """
-    Matches DHCP server-side packets (Offer / ACK / NAK).
-
-    A rogue DHCP server sends Offer and ACK packets to
-    win the race against the legitimate server.
-
-    Priority 55 - evaluated after DHCPStarvationRule.
-    We match server-originating DHCP packets (src port 67).
-    """
+   
 
     priority = 55
 
