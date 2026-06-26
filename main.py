@@ -60,6 +60,12 @@ from nids_platform.plugins.lldp.plugin import (
 from nids_platform.plugins.stp.plugin import (
     STPPlugin,
 )
+from nids_platform.plugins.dhcp_starvation.plugin import (
+    DHCPStarvationPlugin,
+)
+from nids_platform.plugins.dhcp_spoofing.plugin import (
+    DHCPSpoofingPlugin,
+)
 
 from nids_platform.routing.router import (
     ProtocolRouter,
@@ -76,6 +82,7 @@ from nids_platform.windowing.engine import (
 from nids_platform.capture.pcap_replay import (
     PcapReplayCapture,
 )
+
 
 def configure_logging() -> None:
 
@@ -94,9 +101,9 @@ def build_registry() -> ProtocolRegistry:
 
     registry = ProtocolRegistry()
 
-    registry.register(
-        STPPlugin
-    )
+    #registry.register(
+    #    STPPlugin
+    #)
 
     # registry.register(
     #     BGPPlugin
@@ -106,9 +113,17 @@ def build_registry() -> ProtocolRegistry:
     #     LLDPPlugin
     # )
 
-    # registry.register(
-    #     ARPPlugin
-    # )
+    registry.register(
+        ARPPlugin
+     )
+
+    registry.register(
+        DHCPStarvationPlugin
+    )
+
+    registry.register(
+        DHCPSpoofingPlugin
+    )
 
     registry.validate_all()
 
@@ -166,12 +181,13 @@ def main() -> None:
                     batch
                 )
             )
+
             logger.info(
                 "%s FEATURES: %s",
                 feature_vector.protocol.name,
                 feature_vector.features,
             )
-            
+
             logger.info(
                 (
                     "Features extracted | "
@@ -210,7 +226,7 @@ def main() -> None:
     )
 
     capture = PcapReplayCapture(
-        pcap_path=r"D:\HPE\STP\Dataset\5 sec windows\benign\sw1_sw2_benign_capture_3h.pcapng",
+        pcap_path=r"/home/yogi/dhcp_star/testing_spoofing.pcap",
         replay_speed=1.0,
     )
 

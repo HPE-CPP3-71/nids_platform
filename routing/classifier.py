@@ -10,7 +10,8 @@ from scapy.layers.l2 import STP
 from scapy.layers.l2 import Dot3
 from scapy.layers.l2 import SNAP
 
-from scapy.layers.inet import TCP
+from scapy.layers.inet import TCP, UDP, IP
+from scapy.layers.dhcp import DHCP, BOOTP
 
 from nids_platform.core.enums import Protocol
 from nids_platform.core.packet import PacketRecord
@@ -156,6 +157,98 @@ class BGPRule(ClassifierRule):
         )
 
 
+class DHCPStarvationRule(ClassifierRule):
+    """
+    Matches ONLY DHCP Discover packets (message-type == 1).
+
+    Starvation attacks flood the network exclusively with
+    Discover packets using spoofed MACs to exhaust the pool.
+
+    We deliberately exclude Request packets here because:
+    - In a spoofing pcap, Requests are part of a legitimate
+      DORA exchange and must not be counted as starvation.
+    - The starvation model was trained on Discover-heavy windows;
+      routing stray Requests into it causes false positives.
+
+    Priority 50 - evaluated after BGP, before spoofing.
+    """
+
+    priority = 50
+
+    DHCP_SERVER_PORT = 67
+    DHCP_CLIENT_PORT = 68
+
+    @property
+    def protocol(self) -> Protocol:
+        return Protocol.DHCP_STARVATION
+
+    def matches(self, record: PacketRecord) -> bool:
+
+        packet = record.packet_obj
+
+        if packet is None:
+            return False
+
+        if not packet.haslayer(DHCP) or not packet.haslayer(UDP):
+            return False
+
+        udp = packet[UDP]
+
+        # Must be client-to-server direction
+        if not (
+            udp.dport == self.DHCP_SERVER_PORT
+            or udp.sport == self.DHCP_CLIENT_PORT
+        ):
+            return False
+
+        # Only route Discover packets (type 1) to starvation.
+        # Requests belong to a full DORA transaction and should
+        # not be mistaken for a starvation flood.
+        try:
+            for opt in packet[DHCP].options:
+                if isinstance(opt, tuple) and opt[0] == "message-type":
+                    return int(opt[1]) == 1
+        except Exception:
+            pass
+
+        return False
+
+
+class DHCPSpoofingRule(ClassifierRule):
+    """
+    Matches DHCP server-side packets (Offer / ACK / NAK).
+
+    A rogue DHCP server sends Offer and ACK packets to
+    win the race against the legitimate server.
+
+    Priority 55 - evaluated after DHCPStarvationRule.
+    We match server-originating DHCP packets (src port 67).
+    """
+
+    priority = 55
+
+    DHCP_SERVER_PORT = 67
+
+    @property
+    def protocol(self) -> Protocol:
+        return Protocol.DHCP_SPOOFING
+
+    def matches(self, record: PacketRecord) -> bool:
+
+        packet = record.packet_obj
+
+        if packet is None:
+            return False
+
+        if not packet.haslayer(DHCP) or not packet.haslayer(UDP):
+            return False
+
+        udp = packet[UDP]
+
+        # Server-to-client direction only
+        return udp.sport == self.DHCP_SERVER_PORT
+
+
 class ProtocolClassifier:
 
     def __init__(self) -> None:
@@ -168,6 +261,8 @@ class ProtocolClassifier:
                 ARPRule(),
                 LLDPRule(),
                 BGPRule(),
+                DHCPStarvationRule(),
+                DHCPSpoofingRule(),
             ],
             key=lambda r: r.priority,
         )

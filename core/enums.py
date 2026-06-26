@@ -64,6 +64,8 @@ class Protocol(Enum):
     BGP = "BGP"
     LLDP = "LLDP"
     ARP = "ARP"
+    DHCP_STARVATION = "DHCP_STARVATION"
+    DHCP_SPOOFING = "DHCP_SPOOFING"
 
 
 class PacketSource(Enum):
