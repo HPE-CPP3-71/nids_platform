@@ -101,15 +101,14 @@ def build_registry() -> ProtocolRegistry:
 
     registry = ProtocolRegistry()
 
-<<<<<<< HEAD
+
     #registry.register(
     #    STPPlugin
     #)
-=======
+
     # registry.register(
     #     STPPlugin
     # )
->>>>>>> 88367ab4b93dd2e666a3fb2676f195bb3bdbed1d
 
     # registry.register(
     #     BGPPlugin
@@ -121,18 +120,16 @@ def build_registry() -> ProtocolRegistry:
 
     registry.register(
         ARPPlugin
-<<<<<<< HEAD
+
      )
 
-    registry.register(
-        DHCPStarvationPlugin
-    )
+    #registry.register(
+    #    DHCPStarvationPlugin
+    #)
 
-    registry.register(
-        DHCPSpoofingPlugin
-=======
->>>>>>> 88367ab4b93dd2e666a3fb2676f195bb3bdbed1d
-    )
+    #registry.register(
+    #    DHCPSpoofingPlugin
+    #)
 
     registry.validate_all()
 
@@ -234,11 +231,7 @@ def main() -> None:
         )
     )
 
-<<<<<<< HEAD
-    capture = PcapReplayCapture(
-        pcap_path=r"/home/yogi/dhcp_star/testing_spoofing.pcap",
-        replay_speed=1.0,
-=======
+
     # capture = PcapReplayCapture(
     #     pcap_path=r"D:\HPE\STP\Dataset\5 sec windows\attack\sw1_sw2_benign_capture_attack_123_session4.pcap",
     #     replay_speed=1.0,
@@ -247,8 +240,7 @@ def main() -> None:
     capture = ScapyCapture(
     interface="Wi-Fi",
     bpf_filter=None,
->>>>>>> 88367ab4b93dd2e666a3fb2676f195bb3bdbed1d
-    )
+
 
     def on_packet(
         record: PacketRecord,
