@@ -61,12 +61,107 @@ def test_lldp_plugin_configuration() -> None:
 
     assert plugin.protocol_name == "LLDP"
     assert plugin.engine_type == EngineType.WINDOW
-    assert plugin.model_type == ModelType.SKLEARN
+    assert plugin.model_type == ModelType.RULE_BASED
 
     assert (
         plugin.window_config.window_size_seconds
-        == 120
+        == 60
     )
+
+
+def test_lldp_feature_extraction() -> None:
+    """
+    LLDP feature extractor should build features.
+    """
+
+    from nids_platform.windowing.batch import WindowBatch
+    from nids_platform.core.enums import PacketSource, Protocol
+    from nids_platform.core.packet import PacketMetadata, PacketRecord
+
+    plugin = LLDPPlugin()
+    extractor = plugin.feature_extractor_class()
+
+    packets = (
+        PacketRecord(
+            timestamp=1.0,
+            protocol=Protocol.LLDP,
+            source=PacketSource.PCAP,
+            raw_packet=b"",
+            metadata=PacketMetadata(
+                src_mac="00:11:22:33:44:55",
+                dst_mac="ff:ff:ff:ff:ff:ff",
+            ),
+        ),
+        PacketRecord(
+            timestamp=20.0,
+            protocol=Protocol.LLDP,
+            source=PacketSource.PCAP,
+            raw_packet=b"",
+            metadata=PacketMetadata(
+                src_mac="00:11:22:33:44:55",
+                dst_mac="ff:ff:ff:ff:ff:ff",
+            ),
+        ),
+        PacketRecord(
+            timestamp=30.0,
+            protocol=Protocol.LLDP,
+            source=PacketSource.PCAP,
+            raw_packet=b"",
+            metadata=PacketMetadata(
+                src_mac="00:aa:bb:cc:dd:ee",
+                dst_mac="ff:ff:ff:ff:ff:ff",
+            ),
+        ),
+    )
+
+    batch = WindowBatch.create(
+        protocol=Protocol.LLDP,
+        start_time=0.0,
+        end_time=60.0,
+        packets=packets,
+        source=PacketSource.PCAP,
+    )
+
+    feature_vector = extractor.extract(batch)
+
+    assert feature_vector.features["unique_src_macs"] == 2.0
+    assert feature_vector.features["flood_violation"] == 1.0
+    assert feature_vector.features["mac_violation"] == 0.0
+    assert feature_vector.features["anomaly_severity"] == 0.75
+
+
+def test_lldp_detector_rules() -> None:
+    """
+    LLDP detector should classify based on rule features.
+    """
+
+    from nids_platform.features.vector import FeatureVector
+    from nids_platform.core.enums import Protocol
+    from nids_platform.core.packet import PacketRecord
+    from uuid import uuid4
+
+    feature_vector = FeatureVector.create(
+        protocol=Protocol.LLDP,
+        batch_id=uuid4(),
+        features={
+            "unique_src_macs": 3.0,
+            "packet_count": 10.0,
+            "min_inter_arrival_time": 15.0,
+            "flood_violation": 1.0,
+            "mac_violation": 1.0,
+            "anomaly_severity": 1.0,
+        },
+        window_start=0.0,
+        window_end=60.0,
+        packet_count=10,
+    )
+
+    detector = LLDPPlugin().detector_class(None)
+    result = detector.predict(feature_vector)
+
+    assert result.metadata["classification"] == "ATTACK"
+    assert result.score == 1.0
+    assert result.confidence == 0.95
 
 
 def test_arp_plugin_configuration() -> None:

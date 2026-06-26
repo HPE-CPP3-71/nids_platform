@@ -1,94 +1,63 @@
 """
-ARP protocol plugin implementation.
+ARP protocol plugin.
+
+Phase 4 implementation.
+
+This plugin wires together:
+
+- WindowEngine
+- ARPFeatureExtractor
+- ARPModelLoader
+- ARPDetector
 """
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
-from typing import Any
 
-from nids_platform.core.enums import EngineType
-from nids_platform.core.enums import ModelType
-from nids_platform.core.enums import Protocol
-from nids_platform.core.enums import WindowType
-from nids_platform.core.interfaces import FeatureExtractor
-from nids_platform.core.interfaces import InferenceHandler
-from nids_platform.core.interfaces import ModelLoader
-from nids_platform.core.interfaces import WindowConfig
-from nids_platform.core.interfaces import WindowPlugin
-from nids_platform.core.exceptions import ConfigurationError
+from nids_platform.core.enums import (
+    EngineType,
+)
+from nids_platform.core.enums import (
+    ModelType,
+)
+from nids_platform.core.enums import (
+    Protocol,
+)
+from nids_platform.core.enums import (
+    WindowType,
+)
 
+from nids_platform.core.exceptions import (
+    ConfigurationError,
+)
 
-logger = logging.getLogger(__name__)
+from nids_platform.core.interfaces import (
+    WindowConfig,
+)
+from nids_platform.core.interfaces import (
+    WindowPlugin,
+)
 
+from .detector import (
+    ARPDetector,
+)
 
-class ARPFeatureExtractor(FeatureExtractor):
+from .extractor import (
+    ARPFeatureExtractor,
+)
 
-    def validate_input(self, data: Any) -> None:
-        if data is None:
-            raise ValueError(
-                "ARP input cannot be None."
-            )
-
-    def extract(self, data: Any) -> list[float]:
-        self.validate_input(data)
-
-        if isinstance(data, dict):
-            return [float(len(data)), 4.0]
-
-        return [4.0]
-
-
-class ARPModelLoader(ModelLoader):
-
-    def validate_path(self, path: str) -> None:
-        if not path:
-            raise ValueError(
-                "Model path cannot be empty."
-            )
-
-    def load(self, path: str) -> dict[str, str]:
-        self.validate_path(path)
-
-        model_path = Path(path)
-
-        logger.info(
-            "Loading ARP model from %s",
-            model_path,
-        )
-
-        return {
-            "model_type": "sklearn",
-            "path": str(model_path),
-        }
+from .model_loader import (
+    ARPModelLoader,
+)
 
 
-class ARPInferenceHandler(InferenceHandler):
-
-    def validate_features(
-        self,
-        features: list[float],
-    ) -> None:
-        if not features:
-            raise ValueError(
-                "Feature vector cannot be empty."
-            )
-
-    def predict(
-        self,
-        model: Any,
-        features: list[float],
-    ) -> float:
-        self.validate_features(features)
-
-        return min(
-            sum(features) / 15.0,
-            1.0,
-        )
-
-
-class ARPPlugin(WindowPlugin):
+class ARPPlugin(
+    WindowPlugin,
+):
+    """
+    Production ARP plugin.
+    """
 
     protocol = Protocol.ARP
 
@@ -96,23 +65,52 @@ class ARPPlugin(WindowPlugin):
 
     model_type = ModelType.SKLEARN
 
-    feature_extractor = ARPFeatureExtractor()
-
-    model_loader = ARPModelLoader()
-
-    inference_handler = ARPInferenceHandler()
-
-    window_config = WindowConfig(
-        window_size_seconds=30,
-        window_stride_seconds=30,
-        window_type=WindowType.TUMBLING,
+    feature_extractor_class = (
+        ARPFeatureExtractor
     )
 
-    def validate(self) -> None:
+    detector_class = (
+        ARPDetector
+    )
+
+    model_loader_class = (
+        ARPModelLoader
+    )
+
+    model_path = (
+        Path(__file__).parent
+        / "artifacts"
+    )
+
+    window_config = WindowConfig(
+        window_size_seconds=10,
+        window_stride_seconds=5,
+        window_type=(
+            WindowType.SLIDING
+        ),
+    )
+
+    def validate(
+        self,
+    ) -> None:
+        """
+        Plugin validation.
+        """
+
         if (
             self.window_config.window_size_seconds
-            != 30
+            != 10
         ):
             raise ConfigurationError(
-                "ARP requires a 30-second window."
+                "ARP requires a "
+                "10-second window."
+            )
+
+        if not (
+            self.model_path.exists()
+        ):
+            raise ConfigurationError(
+                "ARP model directory "
+                f"not found: "
+                f"{self.model_path}"
             )

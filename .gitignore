@@ -1,2 +1,16 @@
 .venv/
 .venv312/
+<<<<<<< HEAD
+=======
+.env/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# IDEs
+.vscode/
+.idea/
+>>>>>>> 88367ab4b93dd2e666a3fb2676f195bb3bdbed1d
