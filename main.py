@@ -106,9 +106,6 @@ def build_registry() -> ProtocolRegistry:
     #    STPPlugin
     #)
 
-    # registry.register(
-    #     STPPlugin
-    # )
 
     # registry.register(
     #     BGPPlugin
@@ -240,7 +237,7 @@ def main() -> None:
     capture = ScapyCapture(
     interface="Wi-Fi",
     bpf_filter=None,
-
+    )
 
     def on_packet(
         record: PacketRecord,

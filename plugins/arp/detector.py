@@ -152,7 +152,7 @@ class ARPDetector(
                     "prediction": (
                         prediction
                     ),
-                    "prediction_label": (
+                    "classification": (
                         prediction_label
                     ),
                     "attack_probability": (
