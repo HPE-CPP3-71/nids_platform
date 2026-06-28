@@ -83,6 +83,9 @@ from nids_platform.capture.pcap_replay import (
     PcapReplayCapture,
 )
 
+from nids_platform.ui.dashboard import (
+    Dashboard,
+)
 
 def configure_logging() -> None:
 
@@ -140,7 +143,7 @@ def main() -> None:
     logger = logging.getLogger(
         __name__
     )
-
+    dashboard = Dashboard()
     registry = build_registry()
 
     router = ProtocolRouter(
@@ -163,19 +166,19 @@ def main() -> None:
         batch: WindowBatch,
     ) -> None:
 
-        logger.info(
-            (
-                "Window emitted | "
-                "protocol=%s | "
-                "packets=%d | "
-                "start=%.2f | "
-                "end=%.2f"
-            ),
-            batch.protocol.name,
-            batch.packet_count,
-            batch.start_time,
-            batch.end_time,
-        )
+        # logger.info(
+        #     (
+        #         "Window emitted | "
+        #         "protocol=%s | "
+        #         "packets=%d | "
+        #         "start=%.2f | "
+        #         "end=%.2f"
+        #     ),
+        #     batch.protocol.name,
+        #     batch.packet_count,
+        #     batch.start_time,
+        #     batch.end_time,
+        # )
 
         try:
 
@@ -185,23 +188,23 @@ def main() -> None:
                 )
             )
 
-            logger.info(
-                "%s FEATURES: %s",
-                feature_vector.protocol.name,
-                feature_vector.features,
-            )
+            # logger.info(
+            #     "%s FEATURES: %s",
+            #     feature_vector.protocol.name,
+            #     feature_vector.features,
+            # )
 
-            logger.info(
-                (
-                    "Features extracted | "
-                    "protocol=%s | "
-                    "count=%d | "
-                    "valid=%s"
-                ),
-                feature_vector.protocol.name,
-                feature_vector.feature_count(),
-                feature_vector.valid,
-            )
+            # logger.info(
+            #     (
+            #         "Features extracted | "
+            #         "protocol=%s | "
+            #         "count=%d | "
+            #         "valid=%s"
+            #     ),
+            #     feature_vector.protocol.name,
+            #     feature_vector.feature_count(),
+            #     feature_vector.valid,
+            # )
 
             result = (
                 detector_engine.detect(
@@ -209,9 +212,11 @@ def main() -> None:
                 )
             )
 
-            log_result(
-                result,
-            )
+            dashboard.display(
+                batch=batch,
+                feature_vector=feature_vector,
+                result=result,
+)
 
         except Exception:
 
@@ -277,25 +282,25 @@ def main() -> None:
 
     except KeyboardInterrupt:
 
-        logger.info(
-            "Stopping pipeline"
-        )
+        # logger.info(
+        #     "Stopping pipeline"
+        # )
 
         capture.stop()
 
         window_engine.stop()
 
-        logger.info(
-            (
-                "Router statistics | "
-                "routed=%d "
-                "dropped=%d "
-                "unknown=%d"
-            ),
-            router.stats.routed,
-            router.stats.dropped,
-            router.stats.unknown,
-        )
+        # logger.info(
+        #     (
+        #         "Router statistics | "
+        #         "routed=%d "
+        #         "dropped=%d "
+        #         "unknown=%d"
+        #     ),
+        #     router.stats.routed,
+        #     router.stats.dropped,
+        #     router.stats.unknown,
+        # )
 
 
 def log_result(
@@ -308,36 +313,36 @@ def log_result(
 
     if result.score is None:
 
-        logger.info(
-            "Detection skipped | "
-            "protocol=%s | "
-            "reason=%s",
-            (
-                result.protocol.name
-                if result.protocol
-                else "UNKNOWN"
-            ),
-            result.metadata,
-        )
+        # logger.info(
+        #     "Detection skipped | "
+        #     "protocol=%s | "
+        #     "reason=%s",
+        #     (
+        #         result.protocol.name
+        #         if result.protocol
+        #         else "UNKNOWN"
+        #     ),
+        #     result.metadata,
+        # )
 
         return
 
-    logger.info(
-        (
-            "Detection | "
-            "protocol=%s | "
-            "score=%.4f | "
-            "confidence=%.4f | "
-            "classification=%s"
-        ),
-        result.protocol.name,
-        result.score,
-        result.confidence,
-        result.metadata.get(
-            "classification",
-            "UNKNOWN",
-        ),
-    )
+    # logger.info(
+    #     (
+    #         "Detection | "
+    #         "protocol=%s | "
+    #         "score=%.4f | "
+    #         "confidence=%.4f | "
+    #         "classification=%s"
+    #     ),
+    #     result.protocol.name,
+    #     result.score,
+    #     result.confidence,
+    #     result.metadata.get(
+    #         "classification",
+    #         "UNKNOWN",
+    #     ),
+    # )
 
 
 if __name__ == "__main__":

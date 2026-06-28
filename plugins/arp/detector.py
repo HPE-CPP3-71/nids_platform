@@ -75,7 +75,22 @@ class ARPDetector(
                     feature_vector.window_end
                 ),
             )
-
+        if feature_vector.packet_count == 0:
+            return DetectorResult(
+                protocol=feature_vector.protocol,
+                batch_id=feature_vector.batch_id,
+                detector_name=self.detector_name,
+                status=DetectorStatus.SUCCESS,
+                score=0.0,
+                confidence=1.0,
+                window_start=feature_vector.window_start,
+                window_end=feature_vector.window_end,
+                metadata={
+                    "prediction": -1,
+                    "prediction_label": "NO_TRAFFIC",
+                    "classification": "NO_TRAFFIC",
+                },
+            )
         try:
 
             row = {

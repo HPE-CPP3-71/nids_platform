@@ -101,9 +101,9 @@ class ProtocolRouter:
 
         self._stats.routed += 1
 
-        logger.info(
-            "Protocol identified: %s",
-            protocol.name,
-        )
+        # logger.info(
+        #     "Protocol identified: %s",
+        #     protocol.name,
+        # )
 
         return decision
