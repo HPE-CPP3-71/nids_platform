@@ -37,13 +37,9 @@ from .model_loader import (
 )
 
 
-class BGPPlugin(
-    WindowPlugin,
-):
+class BGPPlugin(WindowPlugin):
     """
     Production BGP plugin.
-
-    Phase 4 implementation.
 
     Wires together:
 
@@ -55,25 +51,15 @@ class BGPPlugin(
 
     protocol = Protocol.BGP
 
-    engine_type = (
-        EngineType.WINDOW
-    )
+    engine_type = EngineType.WINDOW
 
-    model_type = (
-        ModelType.SKLEARN
-    )
+    model_type = ModelType.SKLEARN
 
-    feature_extractor_class = (
-        BGPFeatureExtractor
-    )
+    feature_extractor_class = BGPFeatureExtractor
 
-    detector_class = (
-        BGPDetector
-    )
+    detector_class = BGPDetector
 
-    model_loader_class = (
-        BGPModelLoader
-    )
+    model_loader_class = BGPModelLoader
 
     model_path = (
         Path(__file__).parent
@@ -83,32 +69,37 @@ class BGPPlugin(
     window_config = WindowConfig(
         window_size_seconds=180,
         window_stride_seconds=180,
-        window_type=(
-            WindowType.TUMBLING
-        ),
+        window_type=WindowType.TUMBLING,
     )
 
-    def validate(
-        self,
-    ) -> None:
+    def validate(self) -> None:
         """
-        Plugin validation.
+        Validate plugin configuration.
         """
 
-        if (
-            self.window_config.window_size_seconds
-            != 180
-        ):
+        if self.window_config.window_size_seconds != 180:
             raise ConfigurationError(
-                "BGP requires a "
-                "180-second window."
+                "BGP requires a 180-second window."
             )
 
-        if not (
-            self.model_path.exists()
-        ):
+        if not self.model_path.exists():
             raise ConfigurationError(
-                "BGP model directory "
-                f"not found: "
-                f"{self.model_path}"
+                f"BGP model directory not found: {self.model_path}"
+            )
+
+        required_files = (
+            "best_model.pkl",
+            "feature_columns.json",
+        )
+
+        missing = [
+            filename
+            for filename in required_files
+            if not (self.model_path / filename).exists()
+        ]
+
+        if missing:
+            raise ConfigurationError(
+                "Missing required BGP artefacts: "
+                + ", ".join(missing)
             )

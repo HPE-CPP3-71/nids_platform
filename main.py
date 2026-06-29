@@ -108,18 +108,17 @@ def build_registry() -> ProtocolRegistry:
     #)
 
 
-    # registry.register(
-    #     BGPPlugin
-    # )
+    registry.register(
+        BGPPlugin
+    )
 
     # registry.register(
     #     LLDPPlugin
     # )
 
-    registry.register(
-        ARPPlugin
-
-     )
+    # registry.register(
+    #     ARPPlugin
+    # )
 
     #registry.register(
     #    DHCPStarvationPlugin
@@ -232,15 +231,15 @@ def main() -> None:
     )
 
 
-    # capture = PcapReplayCapture(
-    #     pcap_path=r"D:\HPE\STP\Dataset\5 sec windows\attack\sw1_sw2_benign_capture_attack_123_session4.pcap",
-    #     replay_speed=1.0,
-    # )
-    
-    capture = ScapyCapture(
-    interface="Wi-Fi",
-    bpf_filter=None,
+    capture = PcapReplayCapture(
+        pcap_path=r"D:\HPE\BGP\Project\data\pcap_replay\rrc04_tmnet_anomalous.pcap",
+        replay_speed=1.0,
     )
+    
+    # capture = ScapyCapture(
+    # interface="Wi-Fi",
+    # bpf_filter=None,
+    # )
 
     def on_packet(
         record: PacketRecord,
