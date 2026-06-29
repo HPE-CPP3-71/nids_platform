@@ -84,6 +84,8 @@ TABLE_HEAD    = (FONT, 10, "bold")
 BADGE_FONT    = (FONT, 10, "bold")
 CLOCK_FONT    = (FONT, 11)
 MONO_FONT     = (MONO, 10)
+FOOT_FONT     = (FONT, 12)         # status bar — larger for readability
+FOOT_BOLD     = (FONT, 12, "bold")
 
 # ─── Classification colour map ─────────────────────────────────────────────────
 # Maps every label any detector can emit (ARP / STP / BGP / DHCP / LLDP) to a
@@ -677,6 +679,7 @@ class HistoryTable(Card):
         self._order: list[int] = []
         self._selected_id: Optional[int] = None
         self._autoscroll = True
+        self._follow = True          # follow the live tail until user pins a row
 
         # title + live count
         top = ctk.CTkFrame(self, fg_color="transparent")
@@ -730,6 +733,12 @@ class HistoryTable(Card):
 
         self._count.configure(text=f"{len(self._order):,} windows")
 
+        # Follow the live tail: selecting the new window updates the
+        # summary card, alert banner and details panel. If the user has
+        # pinned an older row, leave their selection untouched.
+        if self._follow or self._selected_id is None:
+            self.select(snap.window_id, notify=True)
+
         if self._autoscroll:
             self.after(10, self._scroll_to_bottom)
 
@@ -740,6 +749,11 @@ class HistoryTable(Card):
             pass
 
     def _handle_select(self, window_id: int):
+        # Clicking the newest row keeps the summary following the live
+        # tail; clicking any older row pins the summary/alert/details
+        # to that window until the newest row is clicked again.
+        latest = self._order[-1] if self._order else None
+        self._follow = (window_id == latest)
         self.select(window_id, notify=True)
 
     def select(self, window_id: int, notify: bool = True):
@@ -763,38 +777,67 @@ class HistoryTable(Card):
 # ─── Status-bar footer ─────────────────────────────────────────────────────────
 
 class StatusFooter(ctk.CTkFrame):
-    """Thin status bar: live status + running session counters + version."""
+    """
+    Status bar: live status, total windows, per-protocol window counts,
+    session alert total, and version. DHCP starvation/spoofing windows are
+    bucketed together under 'DHCP'.
+    """
+
+    PROTOCOLS = ["ARP", "BGP", "DHCP", "STP", "LLDP"]
 
     def __init__(self, parent):
-        super().__init__(parent, fg_color=CARD, corner_radius=0, height=34)
+        super().__init__(parent, fg_color=CARD, corner_radius=0, height=46)
         self._win_count = 0
         self._alert_count = 0
+        self._proto_counts: dict[str, int] = {p: 0 for p in self.PROTOCOLS}
 
-        def seg(text, color=SUBTEXT, side="left", bold=False, pad=(16, 0)):
-            lbl = ctk.CTkLabel(
-                self, text=text, text_color=color,
-                font=(FONT, 10, "bold") if bold else LABEL_SM,
-            )
-            lbl.pack(side=side, padx=pad, pady=6)
+        def seg(text, color=SUBTEXT, side="left", bold=False, pad=(14, 0)):
+            lbl = ctk.CTkLabel(self, text=text, text_color=color,
+                               font=FOOT_BOLD if bold else FOOT_FONT)
+            lbl.pack(side=side, padx=pad, pady=10)
             return lbl
 
-        seg("● ", GREEN, pad=(16, 0))
-        seg("System Status:", SUBTEXT, pad=(0, 0))
+        # ── left cluster: status / capture / windows ─────────────────────────
+        seg("●", GREEN, pad=(16, 0))
+        seg("System Status:", SUBTEXT, pad=(2, 0))
         seg("ONLINE", GREEN, bold=True, pad=(4, 0))
-        seg("Capture:", SUBTEXT)
+        seg("Capture:", SUBTEXT, pad=(16, 0))
         self._capture = seg("Active", ACCENT, bold=True, pad=(4, 0))
-        seg("Windows:", SUBTEXT)
+        seg("Windows:", SUBTEXT, pad=(16, 0))
         self._windows = seg("0", TEXT, bold=True, pad=(4, 0))
-        seg("Alerts:", SUBTEXT)
+
+        # ── per-protocol window counts (each tinted by protocol colour) ──────
+        chips = ctk.CTkFrame(self, fg_color="transparent")
+        chips.pack(side="left", padx=(18, 0))
+        self._proto_labels: dict[str, ctk.CTkLabel] = {}
+        for p in self.PROTOCOLS:
+            lbl = ctk.CTkLabel(chips, text=f"{p} 0", font=FOOT_BOLD,
+                               text_color=protocol_color(p))
+            lbl.pack(side="left", padx=9)
+            self._proto_labels[p] = lbl
+
+        seg("Alerts:", SUBTEXT, pad=(18, 0))
         self._alerts = seg("0", GREEN, bold=True, pad=(4, 0))
 
+        # ── right cluster: version / last update ─────────────────────────────
         seg("Version 1.0.0", MUTED, side="right", pad=(16, 16))
-        self._updated = seg("Last Update: —", MUTED, side="right")
+        self._updated = seg("Last Update: —", MUTED, side="right", pad=(14, 0))
+
+    @staticmethod
+    def _bucket(protocol: str) -> str:
+        return "DHCP" if protocol.upper().startswith("DHCP") else protocol
 
     def register(self, snap: WindowSnapshot):
         self._win_count += 1
         if snap.is_attack:
             self._alert_count += 1
+
+        bucket = self._bucket(snap.protocol)
+        if bucket in self._proto_counts:
+            self._proto_counts[bucket] += 1
+            self._proto_labels[bucket].configure(
+                text=f"{bucket} {self._proto_counts[bucket]:,}")
+
         self._windows.configure(text=f"{self._win_count:,}")
         self._alerts.configure(
             text=f"{self._alert_count:,}",
@@ -867,6 +910,11 @@ class NIDSWindow(ctk.CTk):
         if snap is None:
             self._details.show_empty()
             return
+        # The summary card and alert banner reflect the SELECTED window
+        # (not merely the latest one). Clicking a row in the history table
+        # re-renders all three — summary, alert, and details — together.
+        self._summary.update(snap)
+        self._alert_bar.update(snap.classification, when=snap.end_clock)
         self._details.show_window(snap)
 
     def _select_latest(self):
@@ -895,18 +943,15 @@ class NIDSWindow(ctk.CTk):
             oldest_id = window_id - MAX_HISTORY_ROWS
             self._snapshots.pop(oldest_id, None)
 
-        # Always-visible chrome.
-        self._summary.update(snap)
-        self._alert_bar.update(snap.classification, when=snap.end_clock)
+        # Session counters update for every window regardless of selection.
         self._footer.register(snap)
 
-        # Append to the master table (never disturbs current selection).
+        # Append to the master table. While the table is "following" the
+        # live tail, it selects this new window — which drives the summary
+        # card, alert banner and details panel via _select_window. If the
+        # user has clicked an older row, the selection (and therefore the
+        # summary / alert / details) stays pinned to that window.
         self._table.add_window(snap)
-
-        # Default the details panel to the first window so it isn't empty
-        # forever; subsequent windows never steal the user's selection.
-        if self._table.selected_id is None:
-            self._table.select(window_id)
 
     def enqueue(self, batch, feature_vector, result):
         """Called from the pipeline thread — thread-safe."""
