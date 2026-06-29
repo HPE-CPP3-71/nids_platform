@@ -27,14 +27,14 @@ class STPDetector(
     BaseDetector,
 ):
     """
-    STP XGBoost detector.
+    STP LightGBM multiclass detector.
 
     Consumes FeatureVector objects and
     produces DetectorResult instances.
     """
 
     detector_name = (
-        "stp_xgboost"
+        "stp_lightgbm"
     )
 
     protocol_name = "STP"
@@ -52,7 +52,7 @@ class STPDetector(
         self,
         feature_vector: FeatureVector,
     ) -> DetectorResult:
-
+        
         if not self.is_ready():
 
             return DetectorResult.failure(
@@ -96,12 +96,16 @@ class STPDetector(
                 )
             )
 
-            transformed = (
+            transformed = pd.DataFrame(
                 self.model
                 .preprocessing_pipeline
                 .transform(
                     dataframe
-                )
+                ),
+                columns=(
+                    self.model
+                    .feature_columns
+                ),
             )
 
             prediction = int(
@@ -120,17 +124,39 @@ class STPDetector(
                 )[0]
             )
 
-            attack_probability = (
-                float(
-                    probabilities[1]
-                )
+            confidence = float(
+                probabilities[
+                    prediction
+                ]
             )
 
-            confidence = float(
-                max(
+            predicted_label = (
+                self.model
+                .label_mapping[
+                    "int_to_label"
+                ][
+                    str(
+                        prediction
+                    )
+                ]
+            )
+
+            probability_map = {
+
+                self.model
+                .label_mapping[
+                    "int_to_label"
+                ][
+                    str(index)
+                ]: float(
+                    probability
+                )
+
+                for index, probability
+                in enumerate(
                     probabilities
                 )
-            )
+            }
 
             return DetectorResult(
                 protocol=(
@@ -146,7 +172,7 @@ class STPDetector(
                     DetectorStatus.SUCCESS
                 ),
                 score=(
-                    attack_probability
+                    confidence
                 ),
                 confidence=(
                     confidence
@@ -162,12 +188,10 @@ class STPDetector(
                         prediction
                     ),
                     "classification": (
-                        "ATTACK"
-                        if prediction == 1
-                        else "NORMAL"
+                        predicted_label
                     ),
-                    "attack_probability": (
-                        attack_probability
+                    "probabilities": (
+                        probability_map
                     ),
                 },
             )

@@ -19,4 +19,4 @@ class STPModelBundle:
 
     preprocessing_pipeline: Any
 
-    label_encoder: Any
+    label_mapping: dict[str, Any]

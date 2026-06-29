@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import joblib
@@ -44,9 +45,15 @@ class STPModelLoader(
             path / "preprocessing_pipeline.pkl"
         )
 
-        label_encoder = joblib.load(
-            path / "label_encoder.pkl"
-        )
+        with open(
+            path / "label_mapping.json",
+            "r",
+            encoding="utf-8",
+        ) as file:
+
+            label_mapping = json.load(
+                file
+            )
 
         return STPModelBundle(
             model=model,
@@ -56,8 +63,8 @@ class STPModelLoader(
             preprocessing_pipeline=(
                 preprocessing_pipeline
             ),
-            label_encoder=(
-                label_encoder
+            label_mapping=(
+                label_mapping
             ),
         )
 
@@ -70,7 +77,7 @@ class STPModelLoader(
             "model",
             "feature_columns",
             "preprocessing_pipeline",
-            "label_encoder",
+            "label_mapping",
         )
 
         return all(

@@ -110,13 +110,13 @@ def build_registry() -> ProtocolRegistry:
     )
 
 
-    registry.register(
-        BGPPlugin
-    )
+    # registry.register(
+    #     BGPPlugin
+    # )
 
-    registry.register(
-        LLDPPlugin
-    )
+    # registry.register(
+    #     LLDPPlugin
+    # )
 
     registry.register(
          ARPPlugin
@@ -234,7 +234,7 @@ def main() -> None:
 
 
     # capture = PcapReplayCapture(
-    #     pcap_path=r"D:\HPE\BGP\Project\data\pcap_replay\rrc00_tmnet_normal.pcap",
+    #     pcap_path=r"D:\HPE\BGP\Project\data\pcap_replay\rrc04_slammer_anomalous.pcap",
     #     replay_speed=1.0,
     # )
     

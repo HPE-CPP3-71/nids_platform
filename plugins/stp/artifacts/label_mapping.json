@@ -1,0 +1,20 @@
+{
+  "int_to_label": {
+    "0": "benign",
+    "1": "root_takeover",
+    "2": "bpdu_flood",
+    "3": "tcn_flood"
+  },
+  "label_to_int": {
+    "benign": 0,
+    "root_takeover": 1,
+    "bpdu_flood": 2,
+    "tcn_flood": 3
+  },
+  "class_names": [
+    "benign",
+    "root_takeover",
+    "bpdu_flood",
+    "tcn_flood"
+  ]
+}
