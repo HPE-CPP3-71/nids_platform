@@ -83,9 +83,7 @@ from nids_platform.capture.pcap_replay import (
     PcapReplayCapture,
 )
 
-from nids_platform.ui.dashboard import (
-    Dashboard,
-)
+from nids_platform.ui.dashboard_ctk import Dashboard
 
 def configure_logging() -> None:
 
