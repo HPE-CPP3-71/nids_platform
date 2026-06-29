@@ -46,8 +46,6 @@ class BGPModelBundle:
     """
 
     model:           Any
-    scaler_main:     Any
-    scaler_meta:     Any | None
     feature_columns: list[str]
 
     @property
