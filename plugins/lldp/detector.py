@@ -90,40 +90,42 @@ class LLDPDetector(
             )
         )
 
-        anomaly_severity = (
-            feature_vector.get(
-                "anomaly_severity",
-                0.0,
-            )
-        )
-
-        is_attack = (
-            flood_violation
-            or mac_violation
-        )
-
-        confidence = 0.5
-
+        #
+        # LLDP is purely rule-based: a rule either matches or it does
+        # not. There is no probability, confidence or severity. The
+        # result is expressed solely through the classification label.
+        #
+        # - flood (same MAC, inter-arrival below threshold) -> FLOOD
+        # - rogue (unique source MACs above threshold)      -> ROGUE_ROUTER
+        # - both rules in the same window                    -> FLOOD | ROGUE_ROUTER
+        # - neither                                          -> BENIGN
+        #
         if flood_violation and mac_violation:
-            confidence = 0.95
-        elif flood_violation or mac_violation:
-            confidence = 0.85
+            classification = "FLOOD | ROGUE_ROUTER"
+        elif flood_violation:
+            classification = "FLOOD"
+        elif mac_violation:
+            classification = "ROGUE_ROUTER"
+        else:
+            classification = "BENIGN"
 
+        #
+        # score / confidence are meaningless for a deterministic
+        # rule-based detector. They are left as None so the GUI shows
+        # nothing numeric for LLDP, while keeping the DetectorResult
+        # contract identical to every other protocol.
+        #
         return DetectorResult(
             protocol=feature_vector.protocol,
             batch_id=feature_vector.batch_id,
             detector_name=self.detector_name,
             status=DetectorStatus.SUCCESS,
-            score=anomaly_severity,
-            confidence=confidence,
+            score=None,
+            confidence=None,
             window_start=feature_vector.window_start,
             window_end=feature_vector.window_end,
             metadata={
-                "classification": (
-                    "ATTACK"
-                    if is_attack
-                    else "NORMAL"
-                ),
+                "classification": classification,
                 "unique_src_macs": unique_src_macs,
                 "min_inter_arrival_time": (
                     min_inter_arrival_time

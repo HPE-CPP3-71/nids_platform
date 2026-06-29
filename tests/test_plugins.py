@@ -93,7 +93,9 @@ def test_lldp_feature_extraction() -> None:
             ),
         ),
         PacketRecord(
-            timestamp=20.0,
+            # 1s after the previous packet from the same MAC -> below the
+            # 3s FLOOD_THRESHOLD_SECONDS, so a flood violation is expected.
+            timestamp=2.0,
             protocol=Protocol.LLDP,
             source=PacketSource.PCAP,
             raw_packet=b"",
@@ -127,41 +129,53 @@ def test_lldp_feature_extraction() -> None:
     assert feature_vector.features["unique_src_macs"] == 2.0
     assert feature_vector.features["flood_violation"] == 1.0
     assert feature_vector.features["mac_violation"] == 0.0
-    assert feature_vector.features["anomaly_severity"] == 0.75
+    # LLDP is rule-based: it no longer emits an anomaly_severity feature.
+    assert "anomaly_severity" not in feature_vector.features
 
 
 def test_lldp_detector_rules() -> None:
     """
-    LLDP detector should classify based on rule features.
+    LLDP is rule-based: the detector returns only a classification label
+    (BENIGN / FLOOD / ROGUE_ROUTER / "FLOOD | ROGUE_ROUTER") and carries
+    no score or confidence.
     """
 
     from nids_platform.features.vector import FeatureVector
     from nids_platform.core.enums import Protocol
-    from nids_platform.core.packet import PacketRecord
     from uuid import uuid4
 
-    feature_vector = FeatureVector.create(
-        protocol=Protocol.LLDP,
-        batch_id=uuid4(),
-        features={
-            "unique_src_macs": 3.0,
-            "packet_count": 10.0,
-            "min_inter_arrival_time": 15.0,
-            "flood_violation": 1.0,
-            "mac_violation": 1.0,
-            "anomaly_severity": 1.0,
-        },
-        window_start=0.0,
-        window_end=60.0,
-        packet_count=10,
-    )
-
     detector = LLDPPlugin().detector_class(None)
-    result = detector.predict(feature_vector)
 
-    assert result.metadata["classification"] == "ATTACK"
-    assert result.score == 1.0
-    assert result.confidence == 0.95
+    def classify(flood: float, rogue: float) -> "DetectorResult":
+        feature_vector = FeatureVector.create(
+            protocol=Protocol.LLDP,
+            batch_id=uuid4(),
+            features={
+                "unique_src_macs": 3.0 if rogue else 1.0,
+                "packet_count": 10.0,
+                "min_inter_arrival_time": 1.0 if flood else 30.0,
+                "flood_violation": flood,
+                "mac_violation": rogue,
+            },
+            window_start=0.0,
+            window_end=60.0,
+            packet_count=10,
+        )
+        return detector.predict(feature_vector)
+
+    cases = {
+        (0.0, 0.0): "BENIGN",
+        (1.0, 0.0): "FLOOD",
+        (0.0, 1.0): "ROGUE_ROUTER",
+        (1.0, 1.0): "FLOOD | ROGUE_ROUTER",
+    }
+
+    for (flood, rogue), expected in cases.items():
+        result = classify(flood, rogue)
+        assert result.metadata["classification"] == expected
+        # Deterministic rule-based detector: no score / confidence.
+        assert result.score is None
+        assert result.confidence is None
 
 
 def test_arp_plugin_configuration() -> None:

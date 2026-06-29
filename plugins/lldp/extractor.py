@@ -32,10 +32,9 @@ class LLDPFeatureExtractor(
         "min_inter_arrival_time",
         "flood_violation",
         "mac_violation",
-        "anomaly_severity",
     )
 
-    FLOOD_THRESHOLD_SECONDS = 28.0
+    FLOOD_THRESHOLD_SECONDS = 3.0
     UNIQUE_MAC_THRESHOLD = 2
 
     def extract(
@@ -125,13 +124,6 @@ class LLDPFeatureExtractor(
             else 0.0
         )
 
-        anomaly_severity = 0.0
-
-        if flood_violation and mac_violation:
-            anomaly_severity = 1.0
-        elif flood_violation or mac_violation:
-            anomaly_severity = 0.75
-
         features = {
             "unique_src_macs": float(
                 unique_src_macs
@@ -144,7 +136,6 @@ class LLDPFeatureExtractor(
             ),
             "flood_violation": flood_violation,
             "mac_violation": mac_violation,
-            "anomaly_severity": anomaly_severity,
         }
 
         self.validate_feature_set(

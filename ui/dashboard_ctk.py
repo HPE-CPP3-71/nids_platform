@@ -91,6 +91,11 @@ CLASSIFICATION_COLOR: dict[str, str] = {
     "ARP Flooding":  RED,
     "NO_TRAFFIC":    GREY,
     "UNKNOWN":       GREY,
+    # LLDP rule-based labels (only the LLDP detector emits these)
+    "BENIGN":               GREEN,
+    "FLOOD":                RED,
+    "ROGUE_ROUTER":         YELLOW,
+    "FLOOD | ROGUE_ROUTER": RED,
 }
 
 PROTOCOL_COLOR: dict[str, str] = {
@@ -149,7 +154,7 @@ def protocol_color(proto: str) -> str:
 
 
 def is_benign_label(classif: str) -> bool:
-    return classif in ("Benign", "NORMAL", "NO_TRAFFIC", "UNKNOWN")
+    return classif in ("Benign", "BENIGN", "NORMAL", "NO_TRAFFIC", "UNKNOWN")
 
 
 # ─── Reusable widgets ─────────────────────────────────────────────────────────
@@ -705,10 +710,17 @@ class WindowStatsSection(ctk.CTkFrame):
             ("Packet Count", f"{snap.packet_count:,}", WHITE),
             ("Classification", snap.classification,
              classification_color(snap.classification)),
-            ("Confidence", f"{snap.confidence * 100:.2f}%"
-             if snap.confidence is not None else "—", WHITE),
-            ("Score", f"{snap.score:.4f}" if snap.score is not None else "—", WHITE),
         ]
+        # LLDP is purely rule-based — it carries no confidence or score,
+        # so those rows are omitted entirely for LLDP. Every other
+        # protocol still shows them exactly as before.
+        if snap.protocol != "LLDP":
+            core_rows.append(
+                ("Confidence", f"{snap.confidence * 100:.2f}%"
+                 if snap.confidence is not None else "—", WHITE))
+            core_rows.append(
+                ("Score", f"{snap.score:.4f}"
+                 if snap.score is not None else "—", WHITE))
         for label, value, color in core_rows:
             DataRow(self._body, label, value, color).pack(fill="x", padx=10, pady=2)
 
