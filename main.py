@@ -36,10 +36,6 @@ from nids_platform.core.packet import (
     PacketRecord,
 )
 
-from nids_platform.core.enums import (
-    Protocol,
-)
-
 from nids_platform.core.registry import (
     ProtocolRegistry,
 )
@@ -87,7 +83,9 @@ from nids_platform.capture.pcap_replay import (
     PcapReplayCapture,
 )
 
-from nids_platform.ui.dashboard_ctk import Dashboard
+from nids_platform.ui.dashboard_ctk import (
+    Dashboard,
+)
 
 def configure_logging() -> None:
 
@@ -107,30 +105,30 @@ def build_registry() -> ProtocolRegistry:
     registry = ProtocolRegistry()
 
 
-    registry.register(
-       STPPlugin
-    )
+    # registry.register(
+    #    STPPlugin
+    # )
 
 
     registry.register(
         BGPPlugin
     )
 
-    registry.register(
-        LLDPPlugin
-    )
+    # registry.register(
+    #     LLDPPlugin
+    # )
 
-    registry.register(
-        ARPPlugin
-    )
+    # registry.register(
+    #     ARPPlugin
+    # )
 
-    registry.register(
-       DHCPStarvationPlugin
-    )
+    #registry.register(
+    #    DHCPStarvationPlugin
+    #)
 
-    registry.register(
-       DHCPSpoofingPlugin
-    )
+    #registry.register(
+    #    DHCPSpoofingPlugin
+    #)
 
     registry.validate_all()
 
@@ -181,18 +179,6 @@ def main() -> None:
         #     batch.end_time,
         # )
 
-        # LLDP-specific: ignore empty LLDP windows entirely. An LLDP
-        # window with no packets carries no information (every feature
-        # would be zero), so we do not extract features, do not run the
-        # detector, and do not push a row to the GUI. This affects LLDP
-        # only — every other protocol still emits its windows exactly as
-        # before — and it behaves identically for replay and live capture.
-        if (
-            batch.protocol is Protocol.LLDP
-            and batch.packet_count == 0
-        ):
-            return
-
         try:
 
             feature_vector = (
@@ -200,14 +186,6 @@ def main() -> None:
                     batch
                 )
             )
-
-            # Defensive: never surface an LLDP window whose feature
-            # extraction produced no usable feature vector.
-            if (
-                batch.protocol is Protocol.LLDP
-                and not feature_vector.valid
-            ):
-                return
 
             # logger.info(
             #     "%s FEATURES: %s",
@@ -255,15 +233,15 @@ def main() -> None:
     )
 
 
-    # capture = PcapReplayCapture(
-    #     pcap_path=r"C:\Users\pmjpr\OneDrive\Desktop\final_datasets\LLDP\lldp_flood\BURSTY_flood.pcap",
-    #     replay_speed=1.0,
-    # )
-    
-    capture = ScapyCapture(
-    interface="Wi-Fi",
-    bpf_filter=None,
+    capture = PcapReplayCapture(
+        pcap_path=r"D:\HPE\BGP\Project\data\pcap_replay\rrc00_tmnet_normal.pcap",
+        replay_speed=1.0,
     )
+    
+    # capture = ScapyCapture(
+    # interface="Wi-Fi",
+    # bpf_filter=None,
+    # )c
 
     def on_packet(
         record: PacketRecord,

@@ -137,9 +137,9 @@ class BGPDetector(BaseDetector):
                 metadata={
                     "prediction": prediction,
                     "classification": (
-                        "ATTACK"
+                        "ROUTELEAKS"
                         if prediction == 1
-                        else "NORMAL"
+                        else "BENIGN"
                     ),
                     "attack_probability": attack_probability,
                 },

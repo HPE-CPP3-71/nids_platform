@@ -96,6 +96,7 @@ CLASSIFICATION_COLOR: dict[str, str] = {
     "FLOOD":                RED,
     "ROGUE_ROUTER":         YELLOW,
     "FLOOD | ROGUE_ROUTER": RED,
+    "ROUTELEAKS":      RED,
 }
 
 PROTOCOL_COLOR: dict[str, str] = {
@@ -820,7 +821,7 @@ class AggregateStatsFooter(ctk.CTkFrame):
     def __init__(self, parent):
         super().__init__(parent, fg_color=PANEL, corner_radius=6)
         labels = ["Packets Captured", "Windows Processed",
-                  "Alerts Generated", "ARP Spoofing", "ARP Flooding",
+                  "Alerts Generated",
                   "Benign", "Last Update"]
         self.grid_columnconfigure(list(range(len(labels))), weight=1)
 
@@ -860,10 +861,10 @@ class AggregateStatsFooter(ctk.CTkFrame):
             text=f"{self._alert_count:,}",
             text_color=RED if self._alert_count > 0 else GREEN,
         )
-        self._vals["ARP Spoofing"].configure(
-            text=f"{self._spoof_count:,}", text_color=YELLOW)
-        self._vals["ARP Flooding"].configure(
-            text=f"{self._flood_count:,}", text_color=RED)
+        # self._vals["ARP Spoofing"].configure(
+        #     text=f"{self._spoof_count:,}", text_color=YELLOW)
+        # self._vals["ARP Flooding"].configure(
+        #     text=f"{self._flood_count:,}", text_color=RED)
         self._vals["Benign"].configure(
             text=f"{self._benign_count:,}", text_color=GREEN)
         self._vals["Last Update"].configure(
