@@ -110,13 +110,13 @@ def build_registry() -> ProtocolRegistry:
     )
 
 
-    # registry.register(
-    #     BGPPlugin
-    # )
+    registry.register(
+        BGPPlugin
+    )
 
-    # registry.register(
-    #     LLDPPlugin
-    # )
+    registry.register(
+        LLDPPlugin
+    )
 
     registry.register(
          ARPPlugin

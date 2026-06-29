@@ -5,5 +5,5 @@ pandas==3.0.3
 pytest==9.1.0
 ruff==0.15.18
 scapy==2.7.0
-scikit-learn==1.6.1
+scikit-learn==1.9
 xgboost==3.3.0
