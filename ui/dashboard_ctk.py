@@ -54,28 +54,43 @@ from typing import Any, Optional
 
 import customtkinter as ctk
 
-# ─── Palette ──────────────────────────────────────────────────────────────────
-BG          = "#0d1117"   # near-black — GitHub dark
-PANEL       = "#161b22"   # card surface
-BORDER      = "#21262d"   # subtle divider
-ACCENT      = "#58a6ff"   # electric blue — protocol headers
-GREEN       = "#3fb950"   # benign / normal
-YELLOW      = "#d29922"   # spoof warning
-RED         = "#f85149"   # flood / attack
-GREY        = "#8b949e"   # inactive / unknown
-WHITE       = "#e6edf3"   # primary text
-SUBTEXT     = "#6e7681"   # secondary text
+# ─────────────────────────────────────────────
+# Modern Light Dashboard Theme
+# ─────────────────────────────────────────────
 
-# Alert bar background tints — CTk only accepts 6-digit hex
-GREEN_TINT  = "#0d2117"   # dark green tint for benign bar
-RED_TINT    = "#2d0f0e"   # dark red tint for attack bar
-PANEL_TINT  = "#161b22"   # neutral (same as PANEL) for ready state
+# Backgrounds
+BG          = "#EEF2F6"      # Window background
+PANEL       = "#FFFFFF"      # Cards / Panels
+PANEL_TINT  = "#FAFBFC"
 
-# Row highlight tints for the window-history table
-ROW_HOVER     = "#1c2128"
-ROW_SELECTED  = "#1c2d3d"
-ROW_SELECTED_BORDER = ACCENT
+# Borders
+BORDER      = "#D8E0E8"
 
+# Primary Accent (Blue)
+ACCENT      = "#1F5FD4"
+
+# Status Colors
+GREEN       = "#1E8E3E"
+YELLOW      = "#E69500"
+RED         = "#D93025"
+GREY        = "#94A3B8"
+
+# Text
+WHITE       = "#1F2937"      # Primary text
+SUBTEXT     = "#64748B"      # Secondary text
+
+# Alert Backgrounds
+GREEN_TINT  = "#EAF7EC"
+RED_TINT    = "#FDECEC"
+
+# Table
+ROW_HOVER            = "#F5F8FC"
+ROW_SELECTED         = "#E8F0FE"
+ROW_SELECTED_BORDER  = "#3B82F6"
+
+# Optional
+HEADER_BG    = "#FFFFFF"
+FOOTER_BG    = "#FFFFFF"
 MONOFONT    = ("Consolas", 11)
 MONOFONT_SM = ("Consolas", 10)
 HEADFONT    = ("Consolas", 10, "bold")
@@ -83,31 +98,34 @@ TITLEFONT   = ("Consolas", 13, "bold")
 
 # ─── Classification colour map (matches theme.py) ─────────────────────────────
 CLASSIFICATION_COLOR: dict[str, str] = {
-    "Benign":        GREEN,
-    "NORMAL":        GREEN,
-    "arp_spoofing":  YELLOW,
-    "ARP Spoofing":  YELLOW,
-    "arp_flooding":  RED,
-    "ARP Flooding":  RED,
-    "NO_TRAFFIC":    GREY,
-    "UNKNOWN":       GREY,
-    # LLDP rule-based labels (only the LLDP detector emits these)
-    "BENIGN":               GREEN,
-    "FLOOD":                RED,
-    "ROGUE_ROUTER":         YELLOW,
+    "Benign": GREEN,
+    "NORMAL": GREEN,
+
+    "arp_spoofing": YELLOW,
+    "ARP Spoofing": YELLOW,
+
+    "arp_flooding": RED,
+    "ARP Flooding": RED,
+
+    "NO_TRAFFIC": GREY,
+    "UNKNOWN": GREY,
+
+    "BENIGN": GREEN,
+    "FLOOD": RED,
+    "ROGUE_ROUTER": YELLOW,
     "FLOOD | ROGUE_ROUTER": RED,
-    "ROUTELEAKS":      RED,
+    "ROUTELEAKS": RED,
 }
 
 PROTOCOL_COLOR: dict[str, str] = {
-    "ARP":  ACCENT,
-    "DHCP": YELLOW,
-    "DNS":  "#79c0ff",
-    "STP":  GREEN,
-    "LLDP": "#d2a8ff",
-    "BGP":  "#d2a8ff",
-    "TCP":  WHITE,
-    "ICMP": "#79c0ff",
+    "ARP":  "#2563EB",
+    "DNS":  "#2563EB",
+    "TCP":  "#475569",
+    "ICMP": "#0284C7",
+    "DHCP": "#D97706",
+    "STP":  "#16A34A",
+    "LLDP": "#7C3AED",
+    "BGP":  "#8B5CF6",
 }
 
 FEATURE_LABELS: dict[str, str] = {
@@ -895,8 +913,8 @@ class NIDSWindow(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        ctk.set_appearance_mode("dark")
-        ctk.set_default_color_theme("blue")
+        ctk.set_appearance_mode("light")
+        ctk.set_default_color_theme("green")
 
         self.configure(fg_color=BG)
         self.title("NIDS Platform — ARP Network Intrusion Detection")
