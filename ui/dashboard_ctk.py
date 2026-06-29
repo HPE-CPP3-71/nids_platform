@@ -1,46 +1,41 @@
 """
 dashboard_ctk.py
 ================
-CustomTkinter GUI dashboard — drop-in replacement for the Rich dashboard.
+CustomTkinter GUI dashboard for the NIDS platform.
 
-Drop this file into:
-    nids_platform/ui/dashboard_ctk.py
+Public API (unchanged — main.py depends on exactly this):
 
-Then in main.py change:
-    from nids_platform.ui.dashboard import Dashboard
-to:
-    from nids_platform.ui.dashboard_ctk import Dashboard
-
-The Dashboard class exposes the same single public method:
+    dashboard = Dashboard()
     dashboard.display(batch, feature_vector, result)
 
 The window runs in a background thread so it never blocks the
-capture / window-engine pipeline.
+capture / window-engine pipeline. Pipeline threads only ever touch
+`Dashboard.display()` → `NIDSWindow.enqueue()` (a thread-safe queue);
+all widget mutation happens on the Tk thread inside `_poll()`.
 
 ──────────────────────────────────────────────────────────────────────────
-LAYOUT (master-detail / IDE style)
+VISUAL DESIGN (light, card-based — matches the reference mock-up)
 ──────────────────────────────────────────────────────────────────────────
-    ┌──────────────────────────────────────────────────────────────────┐
-    │  ⬡ NIDS PLATFORM                                  2026-... clock │
-    ├──────────────────────────────────────────────────────────────────┤
-    │  Detection Summary (latest window — compact strip)               │
-    ├──────────────────────────────────────────────────────────────────┤
-    │  Alert bar (latest window)                                       │
-    ├───────────────────────┬────────────────────────────────────────┤
-    │  DETAILS (selected)   │  WINDOW HISTORY (all processed windows) │
-    │  - metadata           │  scrollable table, click row to select  │
-    │  - extracted features │  new rows append automatically          │
-    │  - runtime stats      │  selection is preserved across updates  │
-    │  (scrollable)         │                                          │
-    └───────────────────────┴────────────────────────────────────────┘
+    ┌────────────────────────────────────────────────────────────────────┐
+    │  🛡  NIDS PLATFORM                                       🕒 clock   │
+    │      Network Intrusion Detection System                            │
+    ├────────────────────────────────────────────────────────────────────┤
+    │  DETECTION SUMMARY (Latest Window)                                  │
+    │  🔗 Protocol  🛡 Class  📈 Conf  🕒 Start  🕒 End  ⏱ Dur  📦 Pkts │
+    ├────────────────────────────────────────────────────────────────────┤
+    │  🛡  NORMAL TRAFFIC   No threats detected…              🕒 time    │
+    ├──────────────────────────┬─────────────────────────────────────────┤
+    │  DETAILS (Selected)      │  WINDOW HISTORY (All Processed Windows) │
+    │   • metadata             │   styled table, classification badges,  │
+    │   • extracted features   │   click a row to inspect it             │
+    │   • runtime statistics   │                                         │
+    ├──────────────────────────┴─────────────────────────────────────────┤
+    │  ● System Status: ONLINE   Capture: …   Windows: …   Version 1.0.0 │
+    └────────────────────────────────────────────────────────────────────┘
 
-This replaces the old "always-on" two-column Features/Statistics layout
-with a master-detail interface: the details panel only renders data for
-whichever window the user has selected in the table, so screen space
-isn't permanently spent on a single window's data. All existing
-functionality (feature display, runtime counters, alert bar, summary)
-is preserved — it has simply moved into the details panel and is now
-scoped per-window instead of always showing only the most recent window.
+This is purely a presentation rewrite. The per-window data model
+(`WindowSnapshot`), the queue/threading model, and the `Dashboard`
+contract are preserved exactly; only the look & layout changed.
 """
 
 from __future__ import annotations
@@ -54,78 +49,71 @@ from typing import Any, Optional
 
 import customtkinter as ctk
 
-# ─────────────────────────────────────────────
-# Modern Light Dashboard Theme
-# ─────────────────────────────────────────────
+# ─── Palette (light theme) ──────────────────────────────────────────────────────
+BG          = "#eef1f6"   # app background — soft blue-grey
+CARD        = "#ffffff"   # card surface
+CARD_ALT    = "#fafbfc"   # zebra / nested surface
+BORDER      = "#e2e8f0"   # hairline divider
+ACCENT      = "#2563eb"   # primary blue
+ACCENT_DK   = "#1d4ed8"   # hover / pressed blue
+TEXT        = "#1e293b"   # primary text  (slate-800)
+SUBTEXT     = "#64748b"   # secondary text (slate-500)
+MUTED       = "#94a3b8"   # tertiary text
 
-# Backgrounds
-BG          = "#EEF2F6"      # Window background
-PANEL       = "#FFFFFF"      # Cards / Panels
-PANEL_TINT  = "#FAFBFC"
+GREEN       = "#15803d"; GREEN_BG = "#e7f6ed"   # benign
+RED         = "#dc2626"; RED_BG   = "#fdecec"   # flood / attack
+AMBER       = "#b45309"; AMBER_BG = "#fdf3e2"   # spoof / rogue / warning
+GREY        = "#64748b"; GREY_BG  = "#eef1f6"   # no-traffic / unknown
 
-# Borders
-BORDER      = "#D8E0E8"
+ROW_HOVER   = "#f1f5f9"   # row hover tint
+ROW_SELECT  = "#e8f0fe"   # selected row tint
 
-# Primary Accent (Blue)
-ACCENT      = "#1F5FD4"
+# ─── Typography (modern sans, with a mono accent for identifiers) ──────────────
+FONT        = "Segoe UI"
+MONO        = "Consolas"
 
-# Status Colors
-GREEN       = "#1E8E3E"
-YELLOW      = "#E69500"
-RED         = "#D93025"
-GREY        = "#94A3B8"
+TITLE_FONT    = (FONT, 20, "bold")
+SUBTITLE_FONT = (FONT, 11)
+SECTION_FONT  = (FONT, 12, "bold")
+LABEL_FONT    = (FONT, 11)
+LABEL_SM      = (FONT, 10)
+VALUE_FONT    = (FONT, 13, "bold")
+VALUE_BIG     = (FONT, 15, "bold")
+TABLE_FONT    = (FONT, 11)
+TABLE_HEAD    = (FONT, 10, "bold")
+BADGE_FONT    = (FONT, 10, "bold")
+CLOCK_FONT    = (FONT, 11)
+MONO_FONT     = (MONO, 10)
 
-# Text
-WHITE       = "#1F2937"      # Primary text
-SUBTEXT     = "#64748B"      # Secondary text
-
-# Alert Backgrounds
-GREEN_TINT  = "#EAF7EC"
-RED_TINT    = "#FDECEC"
-
-# Table
-ROW_HOVER            = "#F5F8FC"
-ROW_SELECTED         = "#E8F0FE"
-ROW_SELECTED_BORDER  = "#3B82F6"
-
-# Optional
-HEADER_BG    = "#FFFFFF"
-FOOTER_BG    = "#FFFFFF"
-MONOFONT    = ("Consolas", 11)
-MONOFONT_SM = ("Consolas", 10)
-HEADFONT    = ("Consolas", 10, "bold")
-TITLEFONT   = ("Consolas", 13, "bold")
-
-# ─── Classification colour map (matches theme.py) ─────────────────────────────
+# ─── Classification colour map ─────────────────────────────────────────────────
+# Maps every label any detector can emit (ARP / STP / BGP / DHCP / LLDP) to a
+# (text colour, pill background) pair. LLDP-only labels are included so the
+# rule-based LLDP detector renders correctly.
 CLASSIFICATION_COLOR: dict[str, str] = {
-    "Benign": GREEN,
-    "NORMAL": GREEN,
-
-    "arp_spoofing": YELLOW,
-    "ARP Spoofing": YELLOW,
-
-    "arp_flooding": RED,
-    "ARP Flooding": RED,
-
-    "NO_TRAFFIC": GREY,
-    "UNKNOWN": GREY,
-
-    "BENIGN": GREEN,
-    "FLOOD": RED,
-    "ROGUE_ROUTER": YELLOW,
+    "Benign":        GREEN,
+    "NORMAL":        GREEN,
+    "BENIGN":        GREEN,
+    "arp_spoofing":  AMBER,
+    "ARP Spoofing":  AMBER,
+    "arp_flooding":  RED,
+    "ARP Flooding":  RED,
+    "NO_TRAFFIC":    GREY,
+    "UNKNOWN":       GREY,
+    # LLDP rule-based labels (only the LLDP detector emits these)
+    "FLOOD":                RED,
+    "ROGUE_ROUTER":         AMBER,
     "FLOOD | ROGUE_ROUTER": RED,
-    "ROUTELEAKS": RED,
 }
 
 PROTOCOL_COLOR: dict[str, str] = {
-    "ARP":  "#2563EB",
-    "DNS":  "#2563EB",
-    "TCP":  "#475569",
-    "ICMP": "#0284C7",
-    "DHCP": "#D97706",
-    "STP":  "#16A34A",
-    "LLDP": "#7C3AED",
-    "BGP":  "#8B5CF6",
+    "ARP":  ACCENT,
+    "DHCP": AMBER,
+    "DNS":  "#0891b2",
+    "STP":  GREEN,
+    "LLDP": "#7c3aed",
+    "BGP":  "#7c3aed",
+    "TCP":  TEXT,
+    "ICMP": "#0891b2",
 }
 
 FEATURE_LABELS: dict[str, str] = {
@@ -141,22 +129,26 @@ FEATURE_LABELS: dict[str, str] = {
     "w_req_count":          "Request Count",
     "w_reply_count":        "Reply Count",
     "w_reply_req_ratio":    "Reply / Request Ratio",
+    # LLDP feature labels
+    "unique_src_macs":        "Unique Src MACs",
+    "packet_count":           "Packet Count",
+    "min_inter_arrival_time": "Min Inter-Arrival (s)",
+    "flood_violation":        "Flood Violation",
+    "mac_violation":          "Rogue-MAC Violation",
 }
 
-# Maximum number of windows kept in history. Older rows are evicted from
-# the *display* (and from the in-memory snapshot store) once this limit
-# is exceeded, so long-running captures don't grow memory unbounded.
-# This is purely a UI-history limit — it does not touch backend state.
+# Maximum number of windows kept in history (display + snapshot store).
+# Purely a UI-history cap — it never touches backend state.
 MAX_HISTORY_ROWS = 2000
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def fmt_value(v: Any) -> str:
-    if isinstance(v, float):
-        return f"{v:.3f}"
     if isinstance(v, bool):
         return "Yes" if v else "No"
+    if isinstance(v, float):
+        return f"{v:.3f}"
     return str(v)
 
 
@@ -164,56 +156,90 @@ def pretty_name(k: str) -> str:
     return FEATURE_LABELS.get(k, k.replace("_", " ").title())
 
 
+def is_benign_label(classif: str) -> bool:
+    return classif in (
+        "Benign", "BENIGN", "NORMAL", "Normal", "NO_TRAFFIC", "UNKNOWN",
+    )
+
+
 def classification_color(label: str) -> str:
-    return CLASSIFICATION_COLOR.get(label, GREY)
+    return CLASSIFICATION_COLOR.get(label, RED)
+
+
+def classification_style(label: str) -> tuple[str, str]:
+    """Return (text_color, pill_background) for a classification label."""
+    if label in ("NO_TRAFFIC", "UNKNOWN"):
+        return GREY, GREY_BG
+    if is_benign_label(label):
+        return GREEN, GREEN_BG
+    low = label.lower()
+    if "flood" in low or "attack" in low:
+        return RED, RED_BG
+    if "spoof" in low or "rogue" in low or "tunnel" in low:
+        return AMBER, AMBER_BG
+    return RED, RED_BG
 
 
 def protocol_color(proto: str) -> str:
     return PROTOCOL_COLOR.get(proto, ACCENT)
 
 
-def is_benign_label(classif: str) -> bool:
-    return classif in ("Benign", "BENIGN", "NORMAL", "NO_TRAFFIC", "UNKNOWN")
+def fmt_pct(conf: Optional[float]) -> str:
+    return f"{conf * 100:.2f} %" if conf is not None else "—"
 
 
 # ─── Reusable widgets ─────────────────────────────────────────────────────────
 
-class SectionLabel(ctk.CTkLabel):
-    """Uppercase section header in accent colour."""
-    def __init__(self, parent, text, **kw):
-        super().__init__(
-            parent,
-            text=text.upper(),
-            font=HEADFONT,
-            text_color=ACCENT,
-            **kw,
-        )
+class Card(ctk.CTkFrame):
+    """White rounded card with a hairline border — the base surface."""
+    def __init__(self, parent, **kw):
+        kw.setdefault("fg_color", CARD)
+        kw.setdefault("corner_radius", 10)
+        kw.setdefault("border_width", 1)
+        kw.setdefault("border_color", BORDER)
+        super().__init__(parent, **kw)
+
+
+class CardTitle(ctk.CTkFrame):
+    """Card header: bold title + muted suffix, optional leading icon."""
+    def __init__(self, parent, title: str, suffix: str = "", icon: str = ""):
+        super().__init__(parent, fg_color="transparent")
+        col = 0
+        if icon:
+            ctk.CTkLabel(self, text=icon, font=(FONT, 13), text_color=ACCENT
+                         ).grid(row=0, column=col, padx=(0, 6))
+            col += 1
+        ctk.CTkLabel(self, text=title, font=SECTION_FONT, text_color=ACCENT,
+                     anchor="w").grid(row=0, column=col, sticky="w")
+        col += 1
+        if suffix:
+            ctk.CTkLabel(self, text=suffix, font=LABEL_SM, text_color=MUTED,
+                         anchor="w").grid(row=0, column=col, sticky="w", padx=(6, 0))
 
 
 class DataRow(ctk.CTkFrame):
-    """
-    One key-value row used inside feature and stats panels.
-    """
+    """One key : value row used in the details panel."""
     def __init__(self, parent, label: str, value: str = "—",
-                 value_color: str = WHITE):
+                 value_color: str = TEXT, value_font=LABEL_FONT):
         super().__init__(parent, fg_color="transparent")
-        self.columnconfigure(0, weight=1)
+        self.columnconfigure(0, weight=0)
         self.columnconfigure(1, weight=1)
+        ctk.CTkLabel(self, text=label, font=LABEL_FONT, text_color=SUBTEXT,
+                     anchor="w").grid(row=0, column=0, sticky="w", padx=(0, 12))
+        self._value = ctk.CTkLabel(self, text=value, font=value_font,
+                                   text_color=value_color, anchor="e")
+        self._value.grid(row=0, column=1, sticky="e")
 
-        self._label_widget = ctk.CTkLabel(
-            self, text=label, font=MONOFONT,
-            text_color=SUBTEXT, anchor="w",
-        )
-        self._label_widget.grid(row=0, column=0, sticky="w", padx=(0, 8))
+    def update_value(self, value: str, color: str = TEXT):
+        self._value.configure(text=value, text_color=color)
 
-        self._value_widget = ctk.CTkLabel(
-            self, text=value, font=MONOFONT,
-            text_color=value_color, anchor="e",
-        )
-        self._value_widget.grid(row=0, column=1, sticky="e")
 
-    def update_value(self, value: str, color: str = WHITE):
-        self._value_widget.configure(text=value, text_color=color)
+class Badge(ctk.CTkLabel):
+    """Rounded classification pill (tinted background, coloured text)."""
+    def __init__(self, parent, label: str):
+        fg, bg = classification_style(label)
+        super().__init__(parent, text=f"  {label}  ", font=BADGE_FONT,
+                         text_color=fg, fg_color=bg, corner_radius=11)
 
 
 class Divider(ctk.CTkFrame):
@@ -283,165 +309,353 @@ class WindowSnapshot:
             metadata=dict(result.metadata) if result.metadata else {},
         )
 
+    # ── derived display helpers (presentation only) ──────────────────────────
+    @property
+    def end_clock(self) -> str:
+        return datetime.fromtimestamp(self.received_at).strftime("%H:%M:%S")
 
-# ─── Top strip: latest-window summary (compact, replaces old big panel) ──────
-
-class LatestSummaryStrip(ctk.CTkFrame):
-    """
-    Slim single-row strip showing the most recently processed window's
-    headline numbers. Mirrors the old DetectionSummaryPanel's data, but
-    compact so it doesn't compete with the table/details for space.
-    Clicking it selects the latest window in the table.
-    """
-
-    def __init__(self, parent, on_click=None):
-        super().__init__(parent, fg_color=PANEL, corner_radius=6)
-        self._on_click = on_click
-
-        labels = ["Protocol", "Packets", "Classification",
-                  "Confidence", "Score", "Window #"]
-        self._vals: list[ctk.CTkLabel] = []
-
-        self.grid_columnconfigure(list(range(len(labels))), weight=1)
-
-        for col, h in enumerate(labels):
-            ctk.CTkLabel(
-                self, text=h, font=HEADFONT, text_color=ACCENT,
-            ).grid(row=0, column=col, padx=12, pady=(8, 0), sticky="w")
-
-            val = ctk.CTkLabel(self, text="—", font=MONOFONT, text_color=WHITE)
-            val.grid(row=1, column=col, padx=12, pady=(0, 8), sticky="w")
-            self._vals.append(val)
-
-        if self._on_click:
-            self.configure(cursor="hand2")
-            self.bind("<Button-1>", lambda e: self._on_click())
-            for w in self.winfo_children():
-                w.bind("<Button-1>", lambda e: self._on_click())
-
-    def update(self, snap: "WindowSnapshot"):
-        proto, pkts, classif, conf, score, win = self._vals
-        proto.configure(text=snap.protocol, text_color=protocol_color(snap.protocol))
-        pkts.configure(text=f"{snap.packet_count:,}")
-        classif.configure(
-            text=snap.classification,
-            text_color=classification_color(snap.classification),
-        )
-        conf.configure(
-            text=f"{snap.confidence * 100:.1f}%" if snap.confidence is not None else "—"
-        )
-        score.configure(
-            text=f"{snap.score:.4f}" if snap.score is not None else "—"
-        )
-        win.configure(text=f"#{snap.window_id}", text_color=SUBTEXT)
+    @property
+    def start_clock(self) -> str:
+        return datetime.fromtimestamp(
+            self.received_at - self.duration
+        ).strftime("%H:%M:%S")
 
 
-# ─── Alert bar ────────────────────────────────────────────────────────────────
+# ─── Header bar ────────────────────────────────────────────────────────────────
 
-class AlertBar(ctk.CTkFrame):
-    """Flashes red when an attack is detected, green for benign.
-    Always reflects the most recently processed window."""
+class HeaderBar(ctk.CTkFrame):
+    """Top branding bar: shield logo + title + subtitle, clock on the right."""
 
     def __init__(self, parent):
-        super().__init__(parent, height=36, corner_radius=4,
-                         fg_color=PANEL)
-        self._label = ctk.CTkLabel(
-            self, text="● SYSTEM READY — monitoring traffic",
-            font=("Consolas", 12, "bold"), text_color=SUBTEXT,
-        )
-        self._label.pack(expand=True)
+        super().__init__(parent, fg_color=CARD, corner_radius=0, height=64)
+        self.grid_columnconfigure(1, weight=1)
 
-    def update(self, classif: str):
-        benign = is_benign_label(classif)
-        if benign:
-            text_color = GREEN
-            bg_tint    = GREEN_TINT
-            text       = f"✔  {classif}  —  no threat detected"
+        ctk.CTkLabel(self, text="🛡", font=(FONT, 26), text_color=ACCENT
+                     ).grid(row=0, column=0, rowspan=2, padx=(20, 12), pady=10)
+
+        ctk.CTkLabel(self, text="NIDS PLATFORM", font=TITLE_FONT,
+                     text_color=ACCENT, anchor="w"
+                     ).grid(row=0, column=1, sticky="sw", pady=(12, 0))
+        ctk.CTkLabel(self, text="Network Intrusion Detection System",
+                     font=SUBTITLE_FONT, text_color=SUBTEXT, anchor="w"
+                     ).grid(row=1, column=1, sticky="nw", pady=(0, 12))
+
+        self._clock = ctk.CTkLabel(self, text="🕒  —", font=CLOCK_FONT,
+                                   text_color=SUBTEXT)
+        self._clock.grid(row=0, column=2, rowspan=2, padx=20)
+
+    def set_time(self, text: str):
+        self._clock.configure(text=f"🕒  {text}")
+
+
+# ─── Detection summary (icon-labelled metric cells) ───────────────────────────
+
+class SummaryCell(ctk.CTkFrame):
+    """One metric: leading icon, caption above, bold value below."""
+    def __init__(self, parent, icon: str, caption: str):
+        super().__init__(parent, fg_color="transparent")
+        self.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(self, text=icon, font=(FONT, 18), text_color=ACCENT
+                     ).grid(row=0, column=0, rowspan=2, padx=(2, 10))
+        ctk.CTkLabel(self, text=caption, font=LABEL_SM, text_color=SUBTEXT,
+                     anchor="w").grid(row=0, column=1, sticky="w")
+        self._value = ctk.CTkLabel(self, text="—", font=VALUE_FONT,
+                                   text_color=TEXT, anchor="w")
+        self._value.grid(row=1, column=1, sticky="w")
+
+    def set(self, value: str, color: str = TEXT):
+        self._value.configure(text=value, text_color=color)
+
+
+class DetectionSummary(Card):
+    """'DETECTION SUMMARY (Latest Window)' — row of metric cells."""
+
+    CELLS = [
+        ("🔗", "Protocol"),
+        ("🛡", "Classification"),
+        ("📈", "Confidence"),
+        ("🕒", "Window Start"),
+        ("🕒", "Window End"),
+        ("⏱", "Duration"),
+        ("📦", "Packets"),
+    ]
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        CardTitle(self, "DETECTION SUMMARY", "(Latest Window)").pack(
+            anchor="w", padx=16, pady=(12, 6))
+
+        grid = ctk.CTkFrame(self, fg_color="transparent")
+        grid.pack(fill="x", padx=12, pady=(0, 12))
+        self._cells: dict[str, SummaryCell] = {}
+        for col, (icon, cap) in enumerate(self.CELLS):
+            grid.grid_columnconfigure(col, weight=1, uniform="sum")
+            cell = SummaryCell(grid, icon, cap)
+            cell.grid(row=0, column=col, sticky="ew", padx=8, pady=2)
+            self._cells[cap] = cell
+
+    def update(self, snap: WindowSnapshot):
+        self._cells["Protocol"].set(snap.protocol, protocol_color(snap.protocol))
+        self._cells["Classification"].set(
+            snap.classification, classification_color(snap.classification))
+        self._cells["Confidence"].set(fmt_pct(snap.confidence))
+        self._cells["Window Start"].set(snap.start_clock)
+        self._cells["Window End"].set(snap.end_clock)
+        self._cells["Duration"].set(f"{snap.duration:.0f} sec")
+        self._cells["Packets"].set(f"{snap.packet_count:,}")
+
+
+# ─── Alert banner ──────────────────────────────────────────────────────────────
+
+class AlertBanner(ctk.CTkFrame):
+    """Green when benign, red when an attack is detected (latest window)."""
+
+    def __init__(self, parent):
+        super().__init__(parent, corner_radius=10, border_width=1,
+                         border_color=BORDER, fg_color=CARD, height=58)
+        self.grid_columnconfigure(1, weight=1)
+
+        self._icon = ctk.CTkLabel(self, text="🛡", font=(FONT, 20),
+                                  text_color=SUBTEXT)
+        self._icon.grid(row=0, column=0, padx=(18, 12), pady=12)
+
+        self._title = ctk.CTkLabel(self, text="SYSTEM READY",
+                                   font=(FONT, 13, "bold"), text_color=SUBTEXT)
+        self._title.grid(row=0, column=1, sticky="w")
+
+        self._desc = ctk.CTkLabel(self, text="Monitoring traffic…",
+                                  font=LABEL_FONT, text_color=SUBTEXT)
+        self._desc.grid(row=0, column=2, sticky="w", padx=(10, 0))
+
+        self._time = ctk.CTkLabel(self, text="", font=LABEL_SM,
+                                  text_color=SUBTEXT, corner_radius=10)
+        self._time.grid(row=0, column=3, sticky="e", padx=16)
+
+    def update(self, classif: str, when: Optional[str] = None):
+        if is_benign_label(classif):
+            fg, bg = GREEN, GREEN_BG
+            self._icon.configure(text="🛡", text_color=fg)
+            self._title.configure(text="NORMAL TRAFFIC", text_color=fg)
+            self._desc.configure(text="No threats detected in the latest window.",
+                                 text_color=SUBTEXT)
         else:
-            text_color = RED
-            bg_tint    = RED_TINT
-            text       = f"⚠  ALERT: {classif} detected"
-        self._label.configure(text=text, text_color=text_color)
-        self.configure(fg_color=bg_tint)
+            fg, bg = RED, RED_BG
+            self._icon.configure(text="⚠", text_color=fg)
+            self._title.configure(text="ALERT", text_color=fg)
+            self._desc.configure(text=f"{classif} detected in the latest window.",
+                                 text_color=RED)
+        self.configure(fg_color=bg, border_color=bg)
+        self._time.configure(text=f"🕒 {when}" if when else "",
+                             text_color=fg)
 
 
-# ─── Window history table (the "master" view) ─────────────────────────────────
+# ─── Details panel (selected window) ───────────────────────────────────────────
 
-class WindowRow(ctk.CTkFrame):
+class DetailsPanel(Card):
     """
-    One selectable row in the window-history table.
-    Click anywhere on the row to select it; the row highlights while
-    selected and shows a hover tint otherwise.
+    Left 'DETAILS (Selected Window)' card: metadata, extracted features,
+    and runtime statistics for the currently-selected window. Scrollable.
     """
 
-    COLUMN_WEIGHTS = (1, 2, 2, 1, 2, 2, 2, 2)
+    def __init__(self, parent):
+        super().__init__(parent)
+        CardTitle(self, "DETAILS", "(Selected Window)").pack(
+            anchor="w", padx=16, pady=(12, 6))
+
+        self._body = ctk.CTkScrollableFrame(
+            self, fg_color="transparent", scrollbar_button_color=BORDER,
+        )
+        self._body.pack(fill="both", expand=True, padx=8, pady=(0, 10))
+
+        self._placeholder = ctk.CTkLabel(
+            self._body, text="Select a window to view details.",
+            font=LABEL_FONT, text_color=MUTED,
+        )
+        self.show_empty()
+
+    def _clear(self):
+        for w in self._body.winfo_children():
+            w.destroy()
+
+    def _section(self, icon: str, title: str):
+        head = ctk.CTkFrame(self._body, fg_color="transparent")
+        head.pack(fill="x", padx=8, pady=(10, 4))
+        ctk.CTkLabel(head, text=f"{icon}  {title}", font=SECTION_FONT,
+                     text_color=ACCENT, anchor="w").pack(anchor="w")
+
+    def show_empty(self):
+        self._clear()
+        self._placeholder = ctk.CTkLabel(
+            self._body, text="Select a window to view details.",
+            font=LABEL_FONT, text_color=MUTED,
+        )
+        self._placeholder.pack(pady=40)
+
+    def show_window(self, snap: WindowSnapshot):
+        self._clear()
+
+        # ── header ───────────────────────────────────────────────────────────
+        ctk.CTkLabel(
+            self._body, text=f"Window #{snap.window_id} — {snap.protocol}",
+            font=VALUE_BIG, text_color=protocol_color(snap.protocol), anchor="w",
+        ).pack(fill="x", padx=8, pady=(2, 0))
+        Badge(self._body, snap.classification).pack(anchor="w", padx=8, pady=(4, 2))
+
+        # ── metadata ─────────────────────────────────────────────────────────
+        self._section("🧾", "METADATA")
+        batch_id = getattr(snap.batch, "batch_id", None) or "—"
+        meta = [
+            ("Timestamp", datetime.fromtimestamp(snap.received_at).strftime("%Y-%m-%d %H:%M:%S")),
+            ("Protocol", snap.protocol),
+            ("Batch ID", str(batch_id)),
+            ("Window Span", f"{snap.start_clock} → {snap.end_clock}  ({snap.duration:.0f}s)"),
+            ("Packets", f"{snap.packet_count:,}"),
+            ("Processing Time",
+             f"{snap.processing_time_ms:.2f} ms" if snap.processing_time_ms is not None else "—"),
+        ]
+        for k, v in meta:
+            DataRow(self._body, k, v).pack(fill="x", padx=12, pady=2)
+
+        # ── extracted features ──────────────────────────────────────────────
+        self._section("📊", "EXTRACTED FEATURES")
+        features = getattr(snap.feature_vector, "features", None) or {}
+        if not features:
+            ctk.CTkLabel(self._body, text="No features for this window.",
+                         font=LABEL_SM, text_color=MUTED).pack(anchor="w", padx=12, pady=4)
+        else:
+            items = list(features.items())
+            for i, (key, val) in enumerate(items):
+                color = self._feature_color(key, val)
+                DataRow(self._body, pretty_name(key), fmt_value(val), color
+                        ).pack(fill="x", padx=12, pady=2)
+                if i < len(items) - 1:
+                    Divider(self._body).pack(fill="x", padx=12)
+
+        # ── runtime statistics ──────────────────────────────────────────────
+        self._section("⚙", "RUNTIME STATISTICS")
+        rows = [
+            ("Packet Count", f"{snap.packet_count:,}", TEXT),
+            ("Classification", snap.classification,
+             classification_color(snap.classification)),
+        ]
+        # LLDP is purely rule-based — it carries no confidence/score, so
+        # those rows are omitted for LLDP. Every other protocol shows them.
+        if snap.protocol != "LLDP":
+            rows.append(("Confidence", fmt_pct(snap.confidence), TEXT))
+            rows.append(("Score",
+                         f"{snap.score:.4f}" if snap.score is not None else "—", TEXT))
+        for k, v, c in rows:
+            DataRow(self._body, k, v, c).pack(fill="x", padx=12, pady=2)
+
+        extra = {k: v for k, v in snap.metadata.items()
+                 if k not in ("prediction_label", "prediction", "classification")}
+        if extra:
+            Divider(self._body).pack(fill="x", padx=12, pady=(6, 4))
+            ctk.CTkLabel(self._body, text="Detector Metadata", font=LABEL_SM,
+                         text_color=MUTED, anchor="w").pack(anchor="w", padx=12)
+            for k, v in extra.items():
+                DataRow(self._body, pretty_name(k), fmt_value(v)
+                        ).pack(fill="x", padx=12, pady=2)
+
+    @staticmethod
+    def _feature_color(key: str, val: Any) -> str:
+        try:
+            f = float(val)
+        except (TypeError, ValueError):
+            return TEXT
+        if key in ("flood_violation", "mac_violation"):
+            return RED if f else GREEN
+        if key == "w_pkt_rate":
+            return RED if f > 20 else (AMBER if f > 8 else GREEN)
+        if key in ("macs_seen_for_src_ip", "ips_seen_for_src_mac"):
+            return RED if f > 1 else GREEN
+        return TEXT
+
+
+# ─── Window history table ──────────────────────────────────────────────────────
+
+def _sticky(anchor: str) -> str:
+    """Grid sticky accepts only n/e/s/w (or '' for centered)."""
+    return "" if anchor == "center" else anchor
+
+
+# (header label, weight, anchor)
+TABLE_COLUMNS = [
+    ("#",              1, "w"),
+    ("Time",           2, "w"),
+    ("Protocol",       2, "w"),
+    ("Classification", 3, "center"),
+    ("Confidence",     2, "e"),
+    ("Packets",        2, "e"),
+    ("Proc. Time",     2, "e"),
+    ("Duration",       2, "e"),
+]
+
+
+class HistoryRow(ctk.CTkFrame):
+    """One selectable, hover-aware row in the history table."""
 
     def __init__(self, parent, snap: WindowSnapshot, on_select):
-        super().__init__(parent, fg_color="transparent", corner_radius=4)
+        super().__init__(parent, fg_color="transparent", corner_radius=6)
         self._snap = snap
         self._on_select = on_select
         self._selected = False
 
-        for col, w in enumerate(self.COLUMN_WEIGHTS):
-            self.grid_columnconfigure(col, weight=w)
+        for col, (_, w, _) in enumerate(TABLE_COLUMNS):
+            self.grid_columnconfigure(col, weight=w, uniform="tbl")
 
-        ts = datetime.fromtimestamp(snap.received_at).strftime("%H:%M:%S")
-        proc_time = (
-            f"{snap.processing_time_ms:.1f} ms"
-            if snap.processing_time_ms is not None else "—"
-        )
-        conf_text = (
-            f"{snap.confidence * 100:.1f}%" if snap.confidence is not None else "—"
-        )
-
+        conf = fmt_pct(snap.confidence)
+        proc = (f"{snap.processing_time_ms:.1f} ms"
+                if snap.processing_time_ms is not None else "—")
         cells = [
-            (f"#{snap.window_id}", SUBTEXT, "w"),
-            (snap.protocol, protocol_color(snap.protocol), "w"),
-            (f"{snap.packet_count:,}", WHITE, "e"),
-            (snap.classification, classification_color(snap.classification), "w"),
-            (conf_text, WHITE, "e"),
-            (ts, SUBTEXT, "w"),
-            (proc_time, SUBTEXT, "e"),
-            (f"{snap.duration:.1f}s", SUBTEXT, "e"),
+            (f"#{snap.window_id}", SUBTEXT),
+            (snap.end_clock, TEXT),
+            (snap.protocol, protocol_color(snap.protocol)),
+            (None, None),                      # classification badge
+            (conf, TEXT),
+            (f"{snap.packet_count:,}", TEXT),
+            (proc, SUBTEXT),
+            (f"{snap.duration:.0f}s", SUBTEXT),
         ]
 
-        self._cell_labels: list[ctk.CTkLabel] = []
-        for col, (text, color, anchor) in enumerate(cells):
-            lbl = ctk.CTkLabel(
-                self, text=text, font=MONOFONT_SM, text_color=color,
-                anchor=anchor,
-            )
-            lbl.grid(row=0, column=col, padx=8, pady=6, sticky=anchor)
-            self._cell_labels.append(lbl)
+        self._widgets = []
+        for col, ((text, color), (_, _, anchor)) in enumerate(zip(cells, TABLE_COLUMNS)):
+            if col == 3:
+                holder = ctk.CTkFrame(self, fg_color="transparent")
+                badge = Badge(holder, snap.classification)
+                badge.pack()
+                holder.grid(row=0, column=col, padx=6, pady=6, sticky="")
+                self._widgets.append(holder)
+                self._widgets.append(badge)
+                continue
+            lbl = ctk.CTkLabel(self, text=text, font=TABLE_FONT,
+                               text_color=color, anchor=anchor)
+            lbl.grid(row=0, column=col, padx=10, pady=6, sticky=_sticky(anchor))
+            self._widgets.append(lbl)
 
-        self._bind_click(self)
-        for w in self._cell_labels:
-            self._bind_click(w)
-
+        for w in (self, *self._widgets):
+            w.bind("<Button-1>", self._click)
+            w.bind("<Enter>", self._enter)
+            w.bind("<Leave>", self._leave)
         self.configure(cursor="hand2")
 
-    def _bind_click(self, widget):
-        widget.bind("<Button-1>", self._handle_click)
-        widget.bind("<Enter>", self._handle_enter)
-        widget.bind("<Leave>", self._handle_leave)
-
-    def _handle_click(self, _event=None):
+    def _click(self, _e=None):
         self._on_select(self._snap.window_id)
 
-    def _handle_enter(self, _event=None):
+    def _enter(self, _e=None):
         if not self._selected:
             self.configure(fg_color=ROW_HOVER)
 
-    def _handle_leave(self, _event=None):
+    def _leave(self, _e=None):
         if not self._selected:
             self.configure(fg_color="transparent")
 
     def set_selected(self, selected: bool):
         self._selected = selected
         self.configure(
-            fg_color=ROW_SELECTED if selected else "transparent",
+            fg_color=ROW_SELECT if selected else "transparent",
             border_width=1 if selected else 0,
-            border_color=ROW_SELECTED_BORDER if selected else BORDER,
+            border_color=ACCENT if selected else BORDER,
         )
 
     @property
@@ -449,99 +663,74 @@ class WindowRow(ctk.CTkFrame):
         return self._snap.window_id
 
 
-class WindowHistoryTable(ctk.CTkFrame):
+class HistoryTable(Card):
     """
-    Master view: a continuously-updating, scrollable table of every
-    processed window. Clicking a row selects it (calls back into the
-    Dashboard window to update the DetailsPanel). New rows are appended
-    automatically without disturbing the current selection — selection
-    is tracked by window_id, not by row position, so it stays correct
-    even as rows are evicted from the top of history.
+    Right 'WINDOW HISTORY' card. Live-appending, scrollable table. Rows
+    are tracked by window_id so selection survives appends/evictions; a
+    streaming NIDS keeps an auto-scrolling table rather than paginating.
     """
-
-    COLUMNS = [
-        "Window #", "Protocol", "Packets", "Classification",
-        "Confidence", "Time", "Proc. Time", "Duration",
-    ]
 
     def __init__(self, parent, on_select):
-        super().__init__(parent, fg_color=PANEL, corner_radius=6)
+        super().__init__(parent)
         self._on_select = on_select
-        self._rows: dict[int, WindowRow] = {}
-        self._order: list[int] = []          # window_ids in display order
+        self._rows: dict[int, HistoryRow] = {}
+        self._order: list[int] = []
         self._selected_id: Optional[int] = None
         self._autoscroll = True
 
-        self.grid_rowconfigure(1, weight=1)
-        self.grid_columnconfigure(0, weight=1)
+        # title + live count
+        top = ctk.CTkFrame(self, fg_color="transparent")
+        top.pack(fill="x", padx=16, pady=(12, 4))
+        CardTitle(top, "WINDOW HISTORY", "(All Processed Windows)").pack(side="left")
+        self._count = ctk.CTkLabel(top, text="0 windows", font=LABEL_SM,
+                                   text_color=MUTED)
+        self._count.pack(side="right")
 
-        # Header
-        header_bar = ctk.CTkFrame(self, fg_color="transparent")
-        header_bar.grid(row=0, column=0, sticky="ew", padx=4, pady=(4, 0))
-        SectionLabel(header_bar, "  Window History").pack(side="left", padx=6, pady=6)
+        # column header band
+        header = ctk.CTkFrame(self, fg_color=CARD_ALT, corner_radius=8)
+        header.pack(fill="x", padx=10, pady=(0, 2))
+        for col, (name, w, anchor) in enumerate(TABLE_COLUMNS):
+            header.grid_columnconfigure(col, weight=w, uniform="tbl")
+            ctk.CTkLabel(header, text=name, font=TABLE_HEAD, text_color=SUBTEXT,
+                         anchor=anchor).grid(row=0, column=col, padx=10, pady=8,
+                                             sticky=_sticky(anchor))
 
-        self._count_lbl = ctk.CTkLabel(
-            header_bar, text="0 windows", font=MONOFONT_SM, text_color=SUBTEXT,
-        )
-        self._count_lbl.pack(side="right", padx=10)
-
-        # Column headers
-        col_header = ctk.CTkFrame(self, fg_color=BG, corner_radius=4)
-        col_header.grid(row=1, column=0, sticky="ew", padx=4, pady=(2, 0))
-        for col, (name, weight) in enumerate(zip(self.COLUMNS, WindowRow.COLUMN_WEIGHTS)):
-            col_header.grid_columnconfigure(col, weight=weight)
-            ctk.CTkLabel(
-                col_header, text=name, font=HEADFONT, text_color=ACCENT,
-                anchor="w",
-            ).grid(row=0, column=col, padx=8, pady=4, sticky="w")
-
-        # Scrollable row container
+        # scrollable rows
         self._scroll = ctk.CTkScrollableFrame(
-            self, fg_color="transparent",
-            scrollbar_button_color=BORDER,
-        )
-        self._scroll.grid(row=2, column=0, sticky="nsew", padx=4, pady=(0, 4))
-        self.grid_rowconfigure(2, weight=1)
+            self, fg_color="transparent", scrollbar_button_color=BORDER)
+        self._scroll.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
-        self._empty_lbl = ctk.CTkLabel(
-            self._scroll,
-            text="Awaiting first processed window…",
-            font=MONOFONT, text_color=SUBTEXT,
-        )
-        self._empty_lbl.pack(pady=24)
+        self._empty = ctk.CTkLabel(self._scroll,
+                                   text="Awaiting first processed window…",
+                                   font=LABEL_FONT, text_color=MUTED)
+        self._empty.pack(pady=28)
 
-        # Detect manual scroll-up so we can pause autoscroll politely.
-        self._scroll.bind("<MouseWheel>", self._on_manual_scroll, add="+")
-        self._scroll.bind("<Button-4>", self._on_manual_scroll, add="+")
-        self._scroll.bind("<Button-5>", self._on_manual_scroll, add="+")
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            self._scroll.bind(seq, self._on_manual_scroll, add="+")
 
-    def _on_manual_scroll(self, _event=None):
-        # If the user scrolls at all, stop forcing the view to the
-        # bottom on every new row — respect where they're looking.
+    def _on_manual_scroll(self, _e=None):
         self._autoscroll = False
 
     def add_window(self, snap: WindowSnapshot):
-        if self._empty_lbl.winfo_ismapped():
-            self._empty_lbl.pack_forget()
+        if self._empty.winfo_ismapped():
+            self._empty.pack_forget()
 
-        row = WindowRow(self._scroll, snap, on_select=self._handle_select)
+        row = HistoryRow(self._scroll, snap, on_select=self._handle_select)
         row.pack(fill="x", pady=1)
         self._rows[snap.window_id] = row
         self._order.append(snap.window_id)
 
-        # Evict oldest rows beyond the history cap.
         while len(self._order) > MAX_HISTORY_ROWS:
-            oldest_id = self._order.pop(0)
-            oldest_row = self._rows.pop(oldest_id, None)
-            if oldest_row is not None:
-                oldest_row.destroy()
-            if self._selected_id == oldest_id:
+            oldest = self._order.pop(0)
+            old_row = self._rows.pop(oldest, None)
+            if old_row is not None:
+                old_row.destroy()
+            if self._selected_id == oldest:
                 self._selected_id = None
 
-        self._count_lbl.configure(text=f"{len(self._order):,} windows")
+        self._count.configure(text=f"{len(self._order):,} windows")
 
         if self._autoscroll:
-            # Defer to let geometry settle, then jump to bottom.
             self.after(10, self._scroll_to_bottom)
 
     def _scroll_to_bottom(self):
@@ -554,15 +743,11 @@ class WindowHistoryTable(ctk.CTkFrame):
         self.select(window_id, notify=True)
 
     def select(self, window_id: int, notify: bool = True):
-        """Select a window by id, updating row highlighting.
-        Safe to call even if window_id isn't currently rendered."""
         if self._selected_id is not None and self._selected_id in self._rows:
             self._rows[self._selected_id].set_selected(False)
-
         self._selected_id = window_id
         if window_id in self._rows:
             self._rows[window_id].set_selected(True)
-
         if notify:
             self._on_select(window_id)
 
@@ -575,351 +760,64 @@ class WindowHistoryTable(ctk.CTkFrame):
         return self._selected_id
 
 
-# ─── Details panel (the "detail" view — left side) ────────────────────────────
+# ─── Status-bar footer ─────────────────────────────────────────────────────────
 
-class MetadataBlock(ctk.CTkFrame):
-    """Small fixed block: which window is selected + its core identifiers."""
-
-    def __init__(self, parent):
-        super().__init__(parent, fg_color="transparent")
-        self._title = ctk.CTkLabel(
-            self, text="—", font=TITLEFONT, text_color=WHITE, anchor="w",
-        )
-        self._title.pack(fill="x", padx=10, pady=(10, 2))
-
-        self._subtitle = ctk.CTkLabel(
-            self, text="", font=MONOFONT_SM, text_color=SUBTEXT, anchor="w",
-        )
-        self._subtitle.pack(fill="x", padx=10, pady=(0, 8))
-
-        self._rows_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self._rows_frame.pack(fill="x", padx=10)
-
-        self._batch_id_row = DataRow(self._rows_frame, "Batch ID", "—")
-        self._window_span_row = DataRow(self._rows_frame, "Window Span", "—")
-        self._proc_time_row = DataRow(self._rows_frame, "Processing Time", "—")
-        self._received_row = DataRow(self._rows_frame, "Received", "—")
-
-        for r in (self._batch_id_row, self._window_span_row,
-                  self._proc_time_row, self._received_row):
-            r.pack(fill="x", pady=2)
-
-    def update(self, snap: WindowSnapshot):
-        self._title.configure(
-            text=f"Window #{snap.window_id} — {snap.protocol}",
-            text_color=protocol_color(snap.protocol),
-        )
-        self._subtitle.configure(
-            text=snap.classification,
-            text_color=classification_color(snap.classification),
-        )
-        batch_id = getattr(snap.batch, "batch_id", None) or "—"
-        self._batch_id_row.update_value(str(batch_id))
-        self._window_span_row.update_value(
-            f"{snap.window_start:.1f}s → {snap.window_end:.1f}s  ({snap.duration:.1f}s)"
-        )
-        self._proc_time_row.update_value(
-            f"{snap.processing_time_ms:.2f} ms"
-            if snap.processing_time_ms is not None else "—"
-        )
-        self._received_row.update_value(
-            datetime.fromtimestamp(snap.received_at).strftime("%H:%M:%S"),
-            SUBTEXT,
-        )
-
-    def clear(self):
-        self._title.configure(text="No window selected", text_color=SUBTEXT)
-        self._subtitle.configure(text="")
-        for r in (self._batch_id_row, self._window_span_row,
-                  self._proc_time_row, self._received_row):
-            r.update_value("—", SUBTEXT)
-
-
-class FeatureSection(ctk.CTkFrame):
-    """
-    Extracted-Features block for the currently selected window.
-    Rebuilds its rows whenever a new window is selected (cheap — these
-    are small dicts), rather than trying to diff/reuse rows across
-    different windows like the old always-on panel did.
-    """
+class StatusFooter(ctk.CTkFrame):
+    """Thin status bar: live status + running session counters + version."""
 
     def __init__(self, parent):
-        super().__init__(parent, fg_color="transparent")
-        SectionLabel(self, "  Extracted Features").pack(
-            anchor="w", padx=10, pady=(4, 4)
-        )
-        self._body = ctk.CTkFrame(self, fg_color="transparent")
-        self._body.pack(fill="x", padx=0, pady=0)
-        self._placeholder = ctk.CTkLabel(
-            self._body, text="No features for this window.",
-            font=MONOFONT_SM, text_color=SUBTEXT,
-        )
-
-    def update(self, feature_vector):
-        for w in self._body.winfo_children():
-            w.destroy()
-
-        features = getattr(feature_vector, "features", None) or {}
-        if not features:
-            self._placeholder = ctk.CTkLabel(
-                self._body, text="No features for this window.",
-                font=MONOFONT_SM, text_color=SUBTEXT,
-            )
-            self._placeholder.pack(anchor="w", padx=10, pady=4)
-            return
-
-        items = list(features.items())
-        for i, (key, val) in enumerate(items):
-            label = pretty_name(key)
-            text = fmt_value(val)
-
-            try:
-                fval = float(val)
-            except (TypeError, ValueError):
-                fval = None
-
-            if key == "w_pkt_rate" and fval is not None:
-                color = RED if fval > 20 else (YELLOW if fval > 8 else GREEN)
-            elif key in ("macs_seen_for_src_ip", "ips_seen_for_src_mac") and fval is not None:
-                color = RED if fval > 1 else GREEN
-            elif key == "w_unique_src_macs" and fval is not None:
-                color = RED if fval > 15 else WHITE
-            elif key == "is_gratuitous_arp" and fval is not None:
-                color = YELLOW if fval == 1 else WHITE
-            else:
-                color = WHITE
-
-            row = DataRow(self._body, label, text, color)
-            row.pack(fill="x", padx=10, pady=2)
-            if i < len(items) - 1:
-                Divider(self._body).pack(fill="x", padx=10)
-
-    def clear(self):
-        for w in self._body.winfo_children():
-            w.destroy()
-        ctk.CTkLabel(
-            self._body, text="Select a window to view its features.",
-            font=MONOFONT_SM, text_color=SUBTEXT,
-        ).pack(anchor="w", padx=10, pady=4)
-
-
-class WindowStatsSection(ctk.CTkFrame):
-    """
-    Runtime-statistics block scoped to the *selected* window (rather
-    than the old design's running totals). Shows the result object's
-    raw score/confidence plus any extra metadata the detector attached
-    (e.g. attack_probability, per-class scores), so nothing from the
-    backend's result.metadata is lost — it's just displayed per-window
-    now instead of only for the latest one.
-    """
-
-    def __init__(self, parent):
-        super().__init__(parent, fg_color="transparent")
-        SectionLabel(self, "  Runtime Statistics").pack(
-            anchor="w", padx=10, pady=(4, 4)
-        )
-        self._body = ctk.CTkFrame(self, fg_color="transparent")
-        self._body.pack(fill="x")
-
-    def update(self, snap: WindowSnapshot):
-        for w in self._body.winfo_children():
-            w.destroy()
-
-        core_rows = [
-            ("Packet Count", f"{snap.packet_count:,}", WHITE),
-            ("Classification", snap.classification,
-             classification_color(snap.classification)),
-        ]
-        # LLDP is purely rule-based — it carries no confidence or score,
-        # so those rows are omitted entirely for LLDP. Every other
-        # protocol still shows them exactly as before.
-        if snap.protocol != "LLDP":
-            core_rows.append(
-                ("Confidence", f"{snap.confidence * 100:.2f}%"
-                 if snap.confidence is not None else "—", WHITE))
-            core_rows.append(
-                ("Score", f"{snap.score:.4f}"
-                 if snap.score is not None else "—", WHITE))
-        for label, value, color in core_rows:
-            DataRow(self._body, label, value, color).pack(fill="x", padx=10, pady=2)
-
-        extra = {
-            k: v for k, v in snap.metadata.items()
-            if k not in ("prediction_label", "prediction")
-        }
-        if extra:
-            Divider(self._body).pack(fill="x", padx=10, pady=(6, 4))
-            SectionLabel(self._body, "  Detector Metadata").pack(
-                anchor="w", padx=10, pady=(0, 4)
-            )
-            for k, v in extra.items():
-                DataRow(self._body, pretty_name(k), fmt_value(v)).pack(
-                    fill="x", padx=10, pady=2
-                )
-
-    def clear(self):
-        for w in self._body.winfo_children():
-            w.destroy()
-        ctk.CTkLabel(
-            self._body, text="Select a window to view its statistics.",
-            font=MONOFONT_SM, text_color=SUBTEXT,
-        ).pack(anchor="w", padx=10, pady=4)
-
-
-class DetailsPanel(ctk.CTkScrollableFrame):
-    """
-    The "detail" view (left side). Shows metadata, extracted features,
-    and runtime statistics for whichever window is currently selected
-    in the WindowHistoryTable. Shows a placeholder when nothing is
-    selected — it does not force a selection on its own.
-    """
-
-    def __init__(self, parent):
-        super().__init__(
-            parent,
-            label_text="  DETAILS",
-            label_font=HEADFONT,
-            label_text_color=ACCENT,
-            fg_color=PANEL,
-            scrollbar_button_color=BORDER,
-            corner_radius=6,
-        )
-        self._metadata = MetadataBlock(self)
-        self._metadata.pack(fill="x")
-
-        Divider(self).pack(fill="x", padx=10, pady=(4, 8))
-
-        self._features = FeatureSection(self)
-        self._features.pack(fill="x")
-
-        Divider(self).pack(fill="x", padx=10, pady=(8, 8))
-
-        self._stats = WindowStatsSection(self)
-        self._stats.pack(fill="x")
-
-        self._placeholder = ctk.CTkLabel(
-            self,
-            text="Select a window to view details.",
-            font=("Consolas", 13), text_color=SUBTEXT,
-        )
-
-        self._has_selection = False
-        self.show_empty()
-
-    def show_window(self, snap: WindowSnapshot):
-        if self._placeholder.winfo_ismapped():
-            self._placeholder.pack_forget()
-        if not self._has_selection:
-            self._metadata.pack(fill="x")
-            self._has_selection = True
-
-        self._metadata.update(snap)
-        self._features.update(snap.feature_vector)
-        self._stats.update(snap)
-
-    def show_empty(self):
-        self._metadata.clear()
-        self._features.clear()
-        self._stats.clear()
-        if not self._placeholder.winfo_ismapped():
-            self._placeholder.pack(pady=40)
-
-
-# ─── Footer: aggregate runtime totals across the whole session ───────────────
-
-class AggregateStatsFooter(ctk.CTkFrame):
-    """
-    Compact footer strip with running totals across the whole capture
-    session (packets captured, windows processed, alerts generated).
-    This is the session-wide counterpart to the per-window statistics
-    now shown in the DetailsPanel — preserved from the original
-    StatisticsPanel so no existing functionality is lost.
-    """
-
-    def __init__(self, parent):
-        super().__init__(parent, fg_color=PANEL, corner_radius=6)
-        labels = ["Packets Captured", "Windows Processed",
-                  "Alerts Generated",
-                  "Benign", "Last Update"]
-        self.grid_columnconfigure(list(range(len(labels))), weight=1)
-
-        self._vals: dict[str, ctk.CTkLabel] = {}
-        for col, name in enumerate(labels):
-            ctk.CTkLabel(
-                self, text=name, font=HEADFONT, text_color=ACCENT,
-            ).grid(row=0, column=col, padx=10, pady=(8, 0), sticky="w")
-            val = ctk.CTkLabel(self, text="0", font=MONOFONT, text_color=WHITE)
-            val.grid(row=1, column=col, padx=10, pady=(0, 8), sticky="w")
-            self._vals[name] = val
-
-        self._pkt_count = 0
+        super().__init__(parent, fg_color=CARD, corner_radius=0, height=34)
         self._win_count = 0
         self._alert_count = 0
-        self._spoof_count = 0
-        self._flood_count = 0
-        self._benign_count = 0
+
+        def seg(text, color=SUBTEXT, side="left", bold=False, pad=(16, 0)):
+            lbl = ctk.CTkLabel(
+                self, text=text, text_color=color,
+                font=(FONT, 10, "bold") if bold else LABEL_SM,
+            )
+            lbl.pack(side=side, padx=pad, pady=6)
+            return lbl
+
+        seg("● ", GREEN, pad=(16, 0))
+        seg("System Status:", SUBTEXT, pad=(0, 0))
+        seg("ONLINE", GREEN, bold=True, pad=(4, 0))
+        seg("Capture:", SUBTEXT)
+        self._capture = seg("Active", ACCENT, bold=True, pad=(4, 0))
+        seg("Windows:", SUBTEXT)
+        self._windows = seg("0", TEXT, bold=True, pad=(4, 0))
+        seg("Alerts:", SUBTEXT)
+        self._alerts = seg("0", GREEN, bold=True, pad=(4, 0))
+
+        seg("Version 1.0.0", MUTED, side="right", pad=(16, 16))
+        self._updated = seg("Last Update: —", MUTED, side="right")
 
     def register(self, snap: WindowSnapshot):
-        classif = snap.classification
-        self._pkt_count += snap.packet_count
         self._win_count += 1
-
-        if "spoof" in classif.lower() or classif == "ARP Spoofing":
+        if snap.is_attack:
             self._alert_count += 1
-            self._spoof_count += 1
-        elif "flood" in classif.lower() or classif == "ARP Flooding":
-            self._alert_count += 1
-            self._flood_count += 1
-        elif is_benign_label(classif):
-            self._benign_count += 1
-
-        self._vals["Packets Captured"].configure(text=f"{self._pkt_count:,}")
-        self._vals["Windows Processed"].configure(text=f"{self._win_count:,}")
-        self._vals["Alerts Generated"].configure(
+        self._windows.configure(text=f"{self._win_count:,}")
+        self._alerts.configure(
             text=f"{self._alert_count:,}",
-            text_color=RED if self._alert_count > 0 else GREEN,
+            text_color=RED if self._alert_count else GREEN,
         )
-        # self._vals["ARP Spoofing"].configure(
-        #     text=f"{self._spoof_count:,}", text_color=YELLOW)
-        # self._vals["ARP Flooding"].configure(
-        #     text=f"{self._flood_count:,}", text_color=RED)
-        self._vals["Benign"].configure(
-            text=f"{self._benign_count:,}", text_color=GREEN)
-        self._vals["Last Update"].configure(
-            text=datetime.now().strftime("%H:%M:%S"), text_color=SUBTEXT)
+        self._updated.configure(text=f"Last Update: {snap.end_clock}")
 
 
 # ─── Main window ──────────────────────────────────────────────────────────────
 
 class NIDSWindow(ctk.CTk):
-    """
-    Full dashboard window — master-detail layout.
-
-    ┌──────────────────────────────────────────────────────────────────┐
-    │  ⬡ NIDS PLATFORM                                          clock  │
-    ├──────────────────────────────────────────────────────────────────┤
-    │  Latest-window summary strip                                     │
-    ├──────────────────────────────────────────────────────────────────┤
-    │  Alert bar                                                        │
-    ├───────────────────────┬──────────────────────────────────────────┤
-    │  DETAILS (left)       │  WINDOW HISTORY TABLE (center/right)      │
-    │  selected window's     │  every processed window, newest at the   │
-    │  features + stats      │  bottom; click a row to inspect it       │
-    ├───────────────────────┴──────────────────────────────────────────┤
-    │  Aggregate session totals footer                                  │
-    └────────────────────────────────────────────────────────────────────┘
-    """
+    """Full dashboard window — light, card-based master-detail layout."""
 
     def __init__(self):
         super().__init__()
 
         ctk.set_appearance_mode("light")
-        ctk.set_default_color_theme("green")
+        ctk.set_default_color_theme("blue")
 
         self.configure(fg_color=BG)
-        self.title("NIDS Platform — ARP Network Intrusion Detection")
-        self.geometry("1280x800")
-        self.minsize(1000, 640)
+        self.title("NIDS Platform — Network Intrusion Detection")
+        self.geometry("1500x950")
+        self.minsize(1120, 720)
 
         self._snapshots: dict[int, WindowSnapshot] = {}
         self._next_window_id = 1
@@ -929,60 +827,41 @@ class NIDSWindow(ctk.CTk):
         self._poll()
 
     # ── Build ──────────────────────────────────────────────────────────────
-
     def _build_ui(self):
-        # Title bar
-        title_bar = ctk.CTkFrame(self, fg_color=PANEL, corner_radius=0)
-        title_bar.pack(fill="x", padx=0, pady=(0, 2))
-
-        ctk.CTkLabel(
-            title_bar,
-            text="⬡  NIDS PLATFORM",
-            font=("Consolas", 15, "bold"),
-            text_color=ACCENT,
-        ).pack(side="left", padx=16, pady=10)
-
-        self._clock_lbl = ctk.CTkLabel(
-            title_bar, text="", font=MONOFONT, text_color=SUBTEXT
-        )
-        self._clock_lbl.pack(side="right", padx=16)
+        self._header = HeaderBar(self)
+        self._header.pack(fill="x")
         self._tick_clock()
 
-        # Latest-window summary strip
-        self._summary = LatestSummaryStrip(self, on_click=self._select_latest)
-        self._summary.pack(fill="x", padx=12, pady=(6, 4))
+        ctk.CTkFrame(self, height=1, fg_color=BORDER).pack(fill="x")
 
-        # Alert bar
-        self._alert_bar = AlertBar(self)
-        self._alert_bar.pack(fill="x", padx=12, pady=(0, 6))
+        self._summary = DetectionSummary(self)
+        self._summary.pack(fill="x", padx=16, pady=(12, 8))
 
-        # Master-detail body
+        self._alert_bar = AlertBanner(self)
+        self._alert_bar.pack(fill="x", padx=16, pady=(0, 10))
+
         body = ctk.CTkFrame(self, fg_color="transparent")
-        body.pack(fill="both", expand=True, padx=12, pady=(0, 6))
-        body.grid_columnconfigure(0, weight=2, minsize=320)
-        body.grid_columnconfigure(1, weight=3)
+        body.pack(fill="both", expand=True, padx=16, pady=(0, 10))
+        body.grid_columnconfigure(0, weight=2, minsize=340)
+        body.grid_columnconfigure(1, weight=5)
         body.grid_rowconfigure(0, weight=1)
 
         self._details = DetailsPanel(body)
-        self._details.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
+        self._details.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
 
-        self._table = WindowHistoryTable(body, on_select=self._select_window)
-        self._table.grid(row=0, column=1, sticky="nsew", padx=(4, 0))
+        self._table = HistoryTable(body, on_select=self._select_window)
+        self._table.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
 
-        # Aggregate footer
-        self._footer = AggregateStatsFooter(self)
-        self._footer.pack(fill="x", padx=12, pady=(0, 10))
+        ctk.CTkFrame(self, height=1, fg_color=BORDER).pack(fill="x")
+        self._footer = StatusFooter(self)
+        self._footer.pack(fill="x")
 
     # ── Clock ──────────────────────────────────────────────────────────────
-
     def _tick_clock(self):
-        self._clock_lbl.configure(
-            text=datetime.now().strftime("%Y-%m-%d  %H:%M:%S")
-        )
+        self._header.set_time(datetime.now().strftime("%Y-%m-%d  %H:%M:%S"))
         self.after(1000, self._tick_clock)
 
     # ── Selection handling ─────────────────────────────────────────────────
-
     def _select_window(self, window_id: int):
         snap = self._snapshots.get(window_id)
         if snap is None:
@@ -994,7 +873,6 @@ class NIDSWindow(ctk.CTk):
         self._table.select_latest()
 
     # ── Queue polling (thread-safe updates) ───────────────────────────────
-
     def _poll(self):
         try:
             while True:
@@ -1011,26 +889,22 @@ class NIDSWindow(ctk.CTk):
         snap = WindowSnapshot.from_pipeline(window_id, batch, feature_vector, result)
         self._snapshots[window_id] = snap
 
-        # Evict snapshot data for rows the table has already dropped,
-        # so memory doesn't grow without bound on long-running captures.
+        # Evict snapshot data for rows the table has already dropped, so
+        # memory doesn't grow without bound on long-running captures.
         if len(self._snapshots) > MAX_HISTORY_ROWS:
             oldest_id = window_id - MAX_HISTORY_ROWS
             self._snapshots.pop(oldest_id, None)
 
-        # Update always-visible chrome.
+        # Always-visible chrome.
         self._summary.update(snap)
-        self._alert_bar.update(snap.classification)
+        self._alert_bar.update(snap.classification, when=snap.end_clock)
         self._footer.register(snap)
 
-        # Append to the master table. This never disturbs the current
-        # selection — if a row is selected, it stays selected; the
-        # details panel only changes when the user clicks a new row.
+        # Append to the master table (never disturbs current selection).
         self._table.add_window(snap)
 
-        # If nothing has ever been selected yet, default to showing the
-        # very first window so the details panel isn't empty forever on
-        # a quiet single-window demo. Subsequent windows do NOT steal
-        # the selection away from the user.
+        # Default the details panel to the first window so it isn't empty
+        # forever; subsequent windows never steal the user's selection.
         if self._table.selected_id is None:
             self._table.select(window_id)
 
@@ -1039,13 +913,13 @@ class NIDSWindow(ctk.CTk):
         self._queue.put((batch, feature_vector, result))
 
 
-# ─── Public Dashboard class (same API as the Rich version) ────────────────────
+# ─── Public Dashboard class (same API as before) ──────────────────────────────
 
 class Dashboard:
     """
-    Drop-in replacement for nids_platform/ui/dashboard.py
+    Drop-in dashboard.
 
-    Usage (identical to the Rich version):
+    Usage (unchanged):
 
         dashboard = Dashboard()
         ...
@@ -1085,20 +959,20 @@ if __name__ == "__main__":
     import types
 
     class _FakeBatch:
-        def __init__(self, n):
-            self.protocol   = types.SimpleNamespace(name="ARP")
+        def __init__(self, proto, n):
+            self.protocol     = types.SimpleNamespace(name=proto)
             self.packet_count = n
-            self.start_time = time.time() - 5
-            self.end_time   = time.time()
-            self.batch_id   = "demo-001"
-            self.duration   = 5.0
+            self.start_time   = time.time() - 10
+            self.end_time     = time.time()
+            self.batch_id     = "demo-batch-0001"
+            self.duration     = 10.0
 
     class _FakeVector:
         def __init__(self, features):
-            self.protocol    = types.SimpleNamespace(name="ARP")
-            self.batch_id    = "demo-001"
-            self.features    = features
-            self.window_start = time.time() - 5
+            self.protocol     = types.SimpleNamespace(name="ARP")
+            self.batch_id     = "demo"
+            self.features     = features
+            self.window_start = time.time() - 10
             self.window_end   = time.time()
             self.valid        = True
 
@@ -1107,22 +981,26 @@ if __name__ == "__main__":
 
     class _FakeResult:
         def __init__(self, label, score, conf):
-            self.protocol   = types.SimpleNamespace(name="ARP")
-            self.batch_id   = "demo-001"
             self.score      = score
             self.confidence = conf
-            self.metadata   = {
-                "prediction": 0,
-                "classification": label,
-                "attack_probability": score,
-                "processing_time_ms": 4.2,
-            }
+            self.metadata   = {"classification": label,
+                               "processing_time_ms": 4.2}
 
     scenarios = [
-        ("Benign",       0.02, 0.97, 3,   {"w_pkt_rate": 2.1,  "w_unique_src_macs": 3,   "w_unique_src_ips": 3,  "w_bcast_ratio": 0.62, "w_req_count": 5,  "w_reply_count": 3,  "w_reply_req_ratio": 0.6,  "macs_seen_for_src_ip": 1, "ips_seen_for_src_mac": 1, "is_gratuitous_arp": 1, "operation": 1, "payload_len": 60}),
-        ("ARP Spoofing", 0.88, 0.92, 6,   {"w_pkt_rate": 8.4,  "w_unique_src_macs": 2,   "w_unique_src_ips": 2,  "w_bcast_ratio": 0.07, "w_req_count": 1,  "w_reply_count": 13, "w_reply_req_ratio": 13.0, "macs_seen_for_src_ip": 2, "ips_seen_for_src_mac": 1, "is_gratuitous_arp": 0, "operation": 2, "payload_len": 42}),
-        ("ARP Flooding", 0.99, 0.99, 310, {"w_pkt_rate": 31.0, "w_unique_src_macs": 155, "w_unique_src_ips": 152, "w_bcast_ratio": 0.51, "w_req_count": 158,"w_reply_count": 152,"w_reply_req_ratio": 0.96, "macs_seen_for_src_ip": 1, "ips_seen_for_src_mac": 1, "is_gratuitous_arp": 0, "operation": 1, "payload_len": 60}),
-        ("Benign",       0.01, 0.99, 4,   {"w_pkt_rate": 1.6,  "w_unique_src_macs": 4,   "w_unique_src_ips": 4,  "w_bcast_ratio": 0.70, "w_req_count": 7,  "w_reply_count": 3,  "w_reply_req_ratio": 0.43, "macs_seen_for_src_ip": 1, "ips_seen_for_src_mac": 1, "is_gratuitous_arp": 1, "operation": 2, "payload_len": 42}),
+        ("ARP", "Benign",        0.02, 0.97, 3,
+         {"w_pkt_rate": 2.1, "w_unique_src_macs": 3, "w_bcast_ratio": 0.62}),
+        ("ARP", "arp_spoofing",  0.88, 0.92, 6,
+         {"w_pkt_rate": 8.4, "macs_seen_for_src_ip": 2, "w_reply_req_ratio": 13.0}),
+        ("LLDP", "FLOOD",        None, None, 22,
+         {"unique_src_macs": 2, "packet_count": 22, "min_inter_arrival_time": 1.0,
+          "flood_violation": 1.0, "mac_violation": 0.0}),
+        ("LLDP", "BENIGN",       None, None, 4,
+         {"unique_src_macs": 2, "packet_count": 4, "min_inter_arrival_time": 30.0,
+          "flood_violation": 0.0, "mac_violation": 0.0}),
+        ("LLDP", "FLOOD | ROGUE_ROUTER", None, None, 40,
+         {"unique_src_macs": 4, "packet_count": 40, "min_inter_arrival_time": 1.0,
+          "flood_violation": 1.0, "mac_violation": 1.0}),
+        ("STP", "Benign",        0.01, 0.99, 5, {}),
     ]
 
     dashboard = Dashboard()
@@ -1130,17 +1008,16 @@ if __name__ == "__main__":
     def _feed():
         idx = 0
         while True:
-            label, score, conf, pkts, feats = scenarios[idx % len(scenarios)]
-            batch  = _FakeBatch(pkts)
-            vector = _FakeVector(feats)
-            result = _FakeResult(label, score, conf)
-            dashboard.display(batch=batch, feature_vector=vector, result=result)
+            proto, label, score, conf, pkts, feats = scenarios[idx % len(scenarios)]
+            dashboard.display(
+                batch=_FakeBatch(proto, pkts),
+                feature_vector=_FakeVector(feats),
+                result=_FakeResult(label, score, conf),
+            )
             idx += 1
             time.sleep(1.5)
 
-    feeder = threading.Thread(target=_feed, daemon=True)
-    feeder.start()
+    threading.Thread(target=_feed, daemon=True).start()
 
-    # Keep main thread alive until window closed
     while dashboard._thread.is_alive():
         time.sleep(0.5)

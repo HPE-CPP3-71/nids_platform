@@ -105,30 +105,30 @@ def build_registry() -> ProtocolRegistry:
     registry = ProtocolRegistry()
 
 
-    # registry.register(
-    #    STPPlugin
-    # )
+    registry.register(
+       STPPlugin
+    )
 
 
-    # registry.register(
-    #     BGPPlugin
-    # )
+    registry.register(
+        BGPPlugin
+    )
 
-    # registry.register(
-    #     LLDPPlugin
-    # )
+    registry.register(
+        LLDPPlugin
+    )
 
     registry.register(
          ARPPlugin
      )
 
-    #registry.register(
-    #    DHCPStarvationPlugin
-    #)
+    registry.register(
+       DHCPStarvationPlugin
+    )
 
-    #registry.register(
-    #    DHCPSpoofingPlugin
-    #)
+    registry.register(
+       DHCPSpoofingPlugin
+    )
 
     registry.validate_all()
 
