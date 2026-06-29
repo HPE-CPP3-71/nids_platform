@@ -1,8 +1,11 @@
 black==26.5.1
+joblib==1.5.2
+lightgbm==4.6.0
 mypy==2.1.0
 numpy==2.4.6
 pandas==3.0.3
 pytest==9.1.0
+rich==14.2.0
 ruff==0.15.18
 scapy==2.7.0
 scikit-learn==1.9
