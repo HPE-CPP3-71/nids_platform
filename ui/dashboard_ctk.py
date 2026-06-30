@@ -189,6 +189,10 @@ def protocol_color(proto: str) -> str:
 def fmt_pct(conf: Optional[float]) -> str:
     return f"{conf * 100:.2f} %" if conf is not None else "—"
 
+def display_protocol(protocol_name: str) -> str:
+    if protocol_name in ("DHCP_STARVATION", "DHCP_SPOOFING"):
+        return "DHCP"
+    return protocol_name
 
 # ─── Reusable widgets ─────────────────────────────────────────────────────────
 
@@ -297,7 +301,7 @@ class WindowSnapshot:
         return cls(
             window_id=window_id,
             received_at=time.time(),
-            protocol=batch.protocol.name,
+            protocol=display_protocol(batch.protocol.name),
             packet_count=batch.packet_count,
             classification=classif,
             confidence=result.confidence,
