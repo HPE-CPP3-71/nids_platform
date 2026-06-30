@@ -84,7 +84,7 @@ class DHCPStarvationDetector(BaseDetector):
                 metadata={
                     "prediction": prediction,
                     "classification": (
-                        "ATTACK" if prediction == 1 else "NORMAL"
+                        "DHCP_Starvation" if prediction == 1 else "NORMAL"
                     ),
                     "attack_probability": attack_probability,
                 },
